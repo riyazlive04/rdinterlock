@@ -1,0 +1,16 @@
+import { Router } from 'express';
+import { ReportsController } from './reports.controller';
+import { authenticate } from '../../middleware/auth';
+
+const router = Router();
+const reportsController = new ReportsController();
+
+router.use(authenticate);
+
+router.get('/dashboard', reportsController.getDashboardSummary);
+router.get('/production', reportsController.getProductionReport);
+router.get('/dispatch', reportsController.getDispatchReport);
+router.get('/financial', reportsController.getFinancialReport);
+router.get('/workers', reportsController.getWorkerReport);
+
+export default router;

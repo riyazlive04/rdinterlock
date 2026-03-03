@@ -1,0 +1,355 @@
+import prisma from '../../config/database';
+import { getTodayRange } from '../../utils/dateUtils';
+
+export class ReportsService {
+  /**
+   * Dashboard summary - Today's production, ready stock, expenses, cash balance
+   */
+  async getDashboardSummary() {
+    const todayRange = getTodayRange();
+
+    // Today's production
+    const todayProduction = await prisma.production.aggregate({
+      where: {
+        date: todayRange,
+      },
+      _sum: { quantity: true },
+      _count: true,
+    });
+
+    // Today's dispatch
+    const todayDispatch = await prisma.dispatch.aggregate({
+      where: {
+        date: todayRange,
+      },
+      _sum: { quantity: true },
+      _count: true,
+    });
+
+    // Today's expenses
+    const todayExpenses = await prisma.expense.aggregate({
+      where: {
+        date: todayRange,
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+
+    // Ready stock (all brick types)
+    const brickTypes = await prisma.brickType.findMany({
+      where: { isActive: true },
+    });
+
+    const readyStock = await Promise.all(
+      brickTypes.map(async (bt: any) => {
+        const produced = await prisma.production.aggregate({
+          where: { brickTypeId: bt.id },
+          _sum: { quantity: true },
+        });
+
+        const dispatched = await prisma.dispatch.aggregate({
+          where: { brickTypeId: bt.id },
+          _sum: { quantity: true },
+        });
+
+        return {
+          brickType: bt.size,
+          stock: (produced._sum.quantity || 0) - (dispatched._sum.quantity || 0),
+        };
+      })
+    );
+
+    // Cash balance
+    const cashEntries = await prisma.cashEntry.findMany();
+    let cashBalance = 0;
+    cashEntries.forEach((entry: any) => {
+      if (entry.type === 'CREDIT') {
+        cashBalance += entry.amount;
+      } else {
+        cashBalance -= entry.amount;
+      }
+    });
+
+    // Pending payments
+    const pendingPayments = await prisma.dispatch.aggregate({
+      where: {
+        paymentStatus: { in: ['PENDING', 'PARTIAL'] },
+      },
+      _sum: { totalAmount: true, paidAmount: true },
+    });
+
+    const pendingAmount =
+      (pendingPayments._sum.totalAmount || 0) - (pendingPayments._sum.paidAmount || 0);
+
+    return {
+      todayProduction: {
+        quantity: todayProduction._sum.quantity || 0,
+        count: todayProduction._count,
+      },
+      todayDispatch: {
+        quantity: todayDispatch._sum.quantity || 0,
+        count: todayDispatch._count,
+      },
+      todayExpenses: {
+        amount: todayExpenses._sum.amount || 0,
+        count: todayExpenses._count,
+      },
+      readyStock,
+      cashBalance,
+      pendingPayments: pendingAmount,
+    };
+  }
+
+  /**
+   * Production report
+   */
+  async getProductionReport(startDate: string, endDate: string) {
+    const productions = await prisma.production.findMany({
+      where: {
+        date: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        },
+      },
+      include: {
+        machine: true,
+        brickType: true,
+        workers: {
+          include: {
+            worker: true,
+          },
+        },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const totalQuantity = productions.reduce((sum: number, p: any) => sum + p.quantity, 0);
+
+    // Group by brick type
+    const byBrickType: any = {};
+    productions.forEach((p: any) => {
+      if (!byBrickType[p.brickType.size]) {
+        byBrickType[p.brickType.size] = {
+          quantity: 0,
+          count: 0,
+        };
+      }
+      byBrickType[p.brickType.size].quantity += p.quantity;
+      byBrickType[p.brickType.size].count += 1;
+    });
+
+    // Group by machine
+    const byMachine: any = {};
+    productions.forEach((p: any) => {
+      if (!byMachine[p.machine.name]) {
+        byMachine[p.machine.name] = {
+          quantity: 0,
+          count: 0,
+        };
+      }
+      byMachine[p.machine.name].quantity += p.quantity;
+      byMachine[p.machine.name].count += 1;
+    });
+
+    return {
+      productions,
+      summary: {
+        totalProductions: productions.length,
+        totalQuantity,
+        byBrickType,
+        byMachine,
+      },
+    };
+  }
+
+  /**
+   * Dispatch report
+   */
+  async getDispatchReport(startDate: string, endDate: string) {
+    const dispatches = await prisma.dispatch.findMany({
+      where: {
+        date: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        },
+      },
+      include: {
+        customer: true,
+        brickType: true,
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const totalQuantity = dispatches.reduce((sum: number, d: any) => sum + d.quantity, 0);
+    const totalRevenue = dispatches.reduce((sum: number, d: any) => sum + (d.totalAmount || 0), 0);
+    const totalTransportCost = dispatches.reduce((sum: number, d: any) => sum + d.transportCost, 0);
+    const totalLoadingCost = dispatches.reduce((sum: number, d: any) => sum + d.loadingCost, 0);
+
+    // Group by customer
+    const byCustomer: any = {};
+    dispatches.forEach((d: any) => {
+      if (!byCustomer[d.customer.name]) {
+        byCustomer[d.customer.name] = {
+          quantity: 0,
+          revenue: 0,
+          count: 0,
+        };
+      }
+      byCustomer[d.customer.name].quantity += d.quantity;
+      byCustomer[d.customer.name].revenue += d.totalAmount || 0;
+      byCustomer[d.customer.name].count += 1;
+    });
+
+    // Group by payment status
+    const byPaymentStatus: any = {};
+    dispatches.forEach((d: any) => {
+      if (!byPaymentStatus[d.paymentStatus]) {
+        byPaymentStatus[d.paymentStatus] = {
+          count: 0,
+          totalAmount: 0,
+        };
+      }
+      byPaymentStatus[d.paymentStatus].count += 1;
+      byPaymentStatus[d.paymentStatus].totalAmount += d.totalAmount || 0;
+    });
+
+    return {
+      dispatches,
+      summary: {
+        totalDispatches: dispatches.length,
+        totalQuantity,
+        totalRevenue,
+        totalTransportCost,
+        totalLoadingCost,
+        byCustomer,
+        byPaymentStatus,
+      },
+    };
+  }
+
+  /**
+   * Financial report
+   */
+  async getFinancialReport(startDate: string, endDate: string) {
+    const dateRange = {
+      gte: new Date(startDate),
+      lte: new Date(endDate),
+    };
+
+    // Revenue from dispatches
+    const dispatches = await prisma.dispatch.aggregate({
+      where: { date: dateRange },
+      _sum: { totalAmount: true, transportCost: true, loadingCost: true },
+    });
+
+    // Expenses
+    const expenses = await prisma.expense.findMany({
+      where: { date: dateRange },
+      include: {
+        worker: {
+          select: { name: true },
+        },
+      },
+    });
+
+    const totalExpenses = expenses.reduce((sum: number, e: any) => sum + e.amount, 0);
+
+    // Group expenses by category
+    const expensesByCategory: any = {};
+    expenses.forEach((e: any) => {
+      if (!expensesByCategory[e.category]) {
+        expensesByCategory[e.category] = 0;
+      }
+      expensesByCategory[e.category] += e.amount;
+    });
+
+    // Cash entries
+    const cashEntries = await prisma.cashEntry.findMany({
+      where: { date: dateRange },
+    });
+
+    let cashCredit = 0;
+    let cashDebit = 0;
+    cashEntries.forEach((entry: any) => {
+      if (entry.type === 'CREDIT') {
+        cashCredit += entry.amount;
+      } else {
+        cashDebit += entry.amount;
+      }
+    });
+
+    const revenue = dispatches._sum.totalAmount || 0;
+    const profit = revenue - totalExpenses;
+
+    return {
+      revenue,
+      expenses: totalExpenses,
+      profit,
+      expensesByCategory,
+      transportCost: dispatches._sum.transportCost || 0,
+      loadingCost: dispatches._sum.loadingCost || 0,
+      cashFlow: {
+        credit: cashCredit,
+        debit: cashDebit,
+        net: cashCredit - cashDebit,
+      },
+    };
+  }
+
+  /**
+   * Worker performance report
+   */
+  async getWorkerReport(startDate: string, endDate: string) {
+    const workers = await prisma.worker.findMany({
+      where: { isActive: true },
+      include: {
+        productionWorkers: {
+          where: {
+            production: {
+              date: {
+                gte: new Date(startDate),
+                lte: new Date(endDate),
+              },
+            },
+          },
+          include: {
+            production: {
+              select: {
+                date: true,
+                shift: true,
+                brickType: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const workerStats = workers.map((worker: any) => {
+      const totalQuantity = worker.productionWorkers.reduce((sum: number, pw: any) => sum + pw.quantity, 0);
+      const totalDays = worker.productionWorkers.length;
+
+      let earnings = 0;
+      if (worker.paymentType === 'PER_BRICK') {
+        earnings = totalQuantity * worker.rate;
+      } else {
+        earnings = totalDays * worker.rate;
+      }
+
+      return {
+        worker: {
+          id: worker.id,
+          name: worker.name,
+          role: worker.role,
+          paymentType: worker.paymentType,
+          rate: worker.rate,
+        },
+        totalProductions: totalDays,
+        totalQuantity,
+        earnings,
+      };
+    });
+
+    return workerStats;
+  }
+}

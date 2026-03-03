@@ -1,0 +1,56 @@
+import { ReactNode } from "react";
+
+interface MobileFormLayoutProps {
+  children: ReactNode;
+  title?: string;
+}
+
+export function MobileFormLayout({ children, title }: MobileFormLayoutProps) {
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-5 sm:py-8 space-y-5 pb-safe">
+      {title && (
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">{title}</h1>
+      )}
+      {children}
+    </div>
+  );
+}
+
+interface FormFieldProps {
+  label: string;
+  children: ReactNode;
+  required?: boolean;
+}
+
+export function FormField({ label, children, required }: FormFieldProps) {
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium text-muted-foreground">
+        {label}
+        {required && <span className="text-destructive ml-1">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+export function BigNumberInput({
+  value,
+  onChange,
+  placeholder = "0",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full h-14 text-2xl font-bold text-center bg-secondary/50 border border-border rounded-xl focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+    />
+  );
+}

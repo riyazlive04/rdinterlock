@@ -1,0 +1,304 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   // ADMIN, MANAGER, VIEWER
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Machine {
+  id         String       @id @default(uuid())
+  name       String
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  production Production[]
+
+  @@map("machines")
+}
+
+model BrickType {
+  id         String     @id @default(uuid())
+  size       String     @unique // e.g., "4inch", "6inch", "8inch"
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  production Production[]
+  dispatch   Dispatch[]
+
+  @@map("brick_types")
+}
+
+model Worker {
+  id                 String              @id @default(uuid())
+  name               String
+  role               String              // OPERATOR, HELPER, LOADER, MANAGER, DRIVER, TELECALLER
+  paymentType        String              // DAILY, PER_BRICK, MONTHLY
+  rate               Float               // Rate per day or per brick or monthly salary
+  advanceBalance     Float               @default(0)
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  productionWorkers  ProductionWorker[]
+  expenses           Expense[]
+  attendance         Attendance[]
+  dailyWages         DailyWage[]
+  advances           WorkerAdvance[]
+  weeklySettlements  WeeklySettlement[]
+  monthlySettlements MonthlySettlement[]
+
+  @@map("workers")
+}
+
+model Production {
+  id          String             @id @default(uuid())
+  date        DateTime
+  machineId   String
+  shift       String             // MORNING, EVENING, NIGHT
+  brickTypeId String
+  quantity    Int
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  machine     Machine            @relation(fields: [machineId], references: [id])
+  brickType   BrickType          @relation(fields: [brickTypeId], references: [id])
+  workers     ProductionWorker[]
+
+  @@index([date])
+  @@index([machineId])
+  @@index([brickTypeId])
+  @@map("production")
+}
+
+model ProductionWorker {
+  id           String     @id @default(uuid())
+  productionId String
+  workerId     String
+  quantity     Int
+  createdAt    DateTime   @default(now())
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  worker       Worker     @relation(fields: [workerId], references: [id])
+
+  @@index([productionId])
+  @@index([workerId])
+  @@map("production_workers")
+}
+
+model Customer {
+  id        String     @id @default(uuid())
+  name      String
+  phone     String?
+  address   String?
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  dispatch  Dispatch[]
+
+  @@map("customers")
+}
+
+model Dispatch {
+  id             String    @id @default(uuid())
+  date           DateTime
+  customerId     String
+  brickTypeId    String
+  quantity       Int
+  distanceKm     Float
+  vehicleType    String    // OWN, RENT
+  transportCost  Float     @default(0)
+  loadingCost    Float     @default(0)
+  paymentStatus  String    // PAID, PENDING, PARTIAL
+  totalAmount    Float?
+  paidAmount     Float     @default(0)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  brickType      BrickType @relation(fields: [brickTypeId], references: [id])
+
+  @@index([date])
+  @@index([customerId])
+  @@index([brickTypeId])
+  @@map("dispatch")
+}
+
+model Expense {
+  id            String          @id @default(uuid())
+  date          DateTime
+  category      String          // FUEL, MAINTENANCE, SALARY, GENERAL, MATERIAL, OTHER
+  amount        Float
+  notes         String?
+  workerId      String?
+  materialId    String?
+  paymentMode   String?         // CASH, UPI, BANK
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  worker        Worker?         @relation(fields: [workerId], references: [id])
+  material      RawMaterial?    @relation(fields: [materialId], references: [id])
+  materialUsage MaterialUsage[]
+
+  @@index([date])
+  @@index([category])
+  @@map("expenses")
+}
+
+model CashEntry {
+  id          String   @id @default(uuid())
+  date        DateTime
+  type        String   // CREDIT, DEBIT
+  amount      Float
+  description String
+  category    String?  // SALES, EXPENSE, LOAN, OTHER
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([type])
+  @@map("cash_entries")
+}
+
+model Settings {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Attendance {
+  id        String   @id @default(uuid())
+  workerId  String
+  date      DateTime
+  present   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  worker    Worker   @relation(fields: [workerId], references: [id])
+
+  @@unique([workerId, date])
+  @@index([date])
+  @@map("attendance")
+}
+
+model DailyWage {
+  id          String   @id @default(uuid())
+  workerId    String
+  date        DateTime
+  bricksMade  Int?
+  wageAmount  Float
+  advanceUsed Float    @default(0)
+  netPayable  Float
+  isPaid      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  worker      Worker   @relation(fields: [workerId], references: [id])
+
+  @@index([date])
+  @@index([workerId])
+  @@index([isPaid])
+  @@map("daily_wages")
+}
+
+model WorkerAdvance {
+  id        String   @id @default(uuid())
+  workerId  String
+  amount    Float
+  type      String   // GIVEN, ADJUSTED
+  date      DateTime
+  note      String?
+  createdAt DateTime @default(now())
+  worker    Worker   @relation(fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@index([date])
+  @@map("worker_advances")
+}
+
+model WeeklySettlement {
+  id          String    @id @default(uuid())
+  workerId    String
+  weekStart   DateTime
+  weekEnd     DateTime
+  totalWage   Float
+  advanceUsed Float     @default(0)
+  netPaid     Float
+  isSettled   Boolean   @default(false)
+  settledAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  worker      Worker    @relation(fields: [workerId], references: [id])
+
+  @@unique([workerId, weekStart])
+  @@index([workerId])
+  @@index([weekStart])
+  @@index([isSettled])
+  @@map("weekly_settlements")
+}
+
+model MonthlySettlement {
+  id          String    @id @default(uuid())
+  workerId    String
+  month       Int
+  year        Int
+  salary      Float
+  advanceUsed Float     @default(0)
+  netPaid     Float
+  isPaid      Boolean   @default(false)
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  worker      Worker    @relation(fields: [workerId], references: [id])
+
+  @@unique([workerId, month, year])
+  @@index([workerId])
+  @@index([month, year])
+  @@index([isPaid])
+  @@map("monthly_settlements")
+}
+
+model RawMaterial {
+  id             String          @id @default(uuid())
+  name           String          @unique
+  unit           String          // e.g., "Ton", "Bag (50kg)", "Liter"
+  description    String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  expenses       Expense[]
+  materialUsages MaterialUsage[]
+
+  @@map("raw_materials")
+}
+
+model MaterialUsage {
+  id           String      @id @default(uuid())
+  materialId   String
+  date         DateTime
+  quantity     Float
+  pricePerUnit Float
+  totalCost    Float
+  expenseId    String?     @unique
+  createdAt    DateTime    @default(now())
+  material     RawMaterial @relation(fields: [materialId], references: [id])
+  expense      Expense?    @relation(fields: [expenseId], references: [id])
+
+  @@index([materialId])
+  @@index([date])
+  @@index([expenseId])
+  @@map("material_usages")
+}
