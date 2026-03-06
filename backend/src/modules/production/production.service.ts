@@ -42,6 +42,13 @@ export class ProductionService {
       }
     }
 
+    const damagedBricks = data.damagedBricks || 0;
+    if (damagedBricks > data.quantity) {
+      throw new AppError('Damaged bricks cannot be greater than produced bricks', 400);
+    }
+
+    const availableBricks = data.quantity - damagedBricks;
+
     const production = await prisma.production.create({
       data: {
         date: new Date(data.date),
@@ -49,6 +56,8 @@ export class ProductionService {
         shift: data.shift,
         brickTypeId: data.brickTypeId,
         quantity: data.quantity,
+        damagedBricks: damagedBricks,
+        availableBricks: availableBricks,
         notes: data.notes,
         workers: data.workers
           ? {

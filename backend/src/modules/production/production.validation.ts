@@ -13,6 +13,7 @@ export const createProductionSchema = z.object({
   }),
   brickTypeId: z.string().uuid('Invalid brick type ID'),
   quantity: z.number().int().positive('Total quantity must be a positive integer'),
+  damagedBricks: z.number().int().min(0, 'Damaged bricks cannot be negative').optional(),
   workers: z.array(workerProductionSchema).optional(),
   notes: z.string().optional(),
 });

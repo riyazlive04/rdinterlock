@@ -173,50 +173,67 @@ const DispatchPage = () => {
       <EntryCard title="Customer Order">
         <div className="space-y-5">
           <FormField label="Customer Name" required>
-            <div className="flex gap-2">
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="flex-1 h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
-              >
-                <option value="">Select customer...</option>
-                {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
-                <DialogTrigger asChild>
-                  <button className="h-12 w-12 rounded-xl gradient-primary text-white flex items-center justify-center shadow-sm active:scale-95 transition-transform touch-target">
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-w-sm rounded-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Add New Customer</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-2">
-                    <FormField label="Customer Name" required>
-                      <input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="Customer name"
-                        className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
-                    </FormField>
-                    <FormField label="Phone (optional)">
-                      <input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} placeholder="Phone number" inputMode="tel"
-                        className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
-                    </FormField>
-                    <FormField label="Location (optional)">
-                      <input value={newCustomerLocation} onChange={(e) => setNewCustomerLocation(e.target.value)} placeholder="City or area"
-                        className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
-                    </FormField>
-                    <ActionButton
-                      label="Save Customer"
-                      icon={Save}
-                      variant="success"
-                      size="lg"
-                      onClick={saveNewCustomer}
-                      className="w-full"
-                      disabled={createCustomerMutation.isPending}
-                    />
-                  </div>
-                </DialogContent>
-              </Dialog>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <select
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  className="flex-1 h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
+                >
+                  <option value="">Select customer...</option>
+                  {customers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+                  <DialogTrigger asChild>
+                    <button className="h-12 w-12 rounded-xl gradient-primary text-white flex items-center justify-center shadow-sm active:scale-95 transition-transform touch-target">
+                      <Plus className="h-5 w-5" />
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-sm rounded-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Add New Customer</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-2">
+                      <FormField label="Customer Name" required>
+                        <input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="Customer name"
+                          className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
+                      </FormField>
+                      <FormField label="Phone (optional)">
+                        <input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} placeholder="Phone number" inputMode="tel"
+                          className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
+                      </FormField>
+                      <FormField label="Location (optional)">
+                        <input value={newCustomerLocation} onChange={(e) => setNewCustomerLocation(e.target.value)} placeholder="City or area"
+                          className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none" />
+                      </FormField>
+                      <ActionButton
+                        label="Save Customer"
+                        icon={Save}
+                        variant="success"
+                        size="lg"
+                        onClick={saveNewCustomer}
+                        className="w-full"
+                        disabled={createCustomerMutation.isPending}
+                      />
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              {customerId && (
+                <div className="text-xs text-muted-foreground bg-secondary/30 p-2 rounded-lg border border-border/50">
+                  {(() => {
+                    const c: any = customers.find((x: any) => x.id === customerId);
+                    if (!c) return null;
+                    return (
+                      <div className="flex justify-between font-medium">
+                        <span>Order Total: <span className="text-foreground">₹{c.totalOrderAmount?.toLocaleString() || 0}</span></span>
+                        <span>Advance: <span className="text-foreground">₹{c.advanceBalance?.toLocaleString() || 0}</span></span>
+                        <span>Pending: <span className="text-destructive font-bold">₹{c.pendingAmount?.toLocaleString() || 0}</span></span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           </FormField>
 

@@ -55,14 +55,14 @@ export class AdvanceService {
       });
 
       // Create cash book entry (cash out)
-      await tx.cashEntry.create({
+      await (tx.cashEntry as any).create({
         data: {
           date: new Date(),
           type: 'DEBIT',
           amount,
           description: `Advance given to ${worker.name}`,
-          category: 'ADVANCE',
-        },
+          category: 'Worker Advance',
+        } as any,
       });
 
       return { advance, updatedWorker };

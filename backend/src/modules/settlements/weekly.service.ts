@@ -85,13 +85,13 @@ export class WeeklySettlementService {
     settlements: any[]
   ) {
     // Check if settlement already exists for this period
-    const existing = await prisma.weeklySettlement.findMany({
+    const existing = await (prisma.weeklySettlement as any).findMany({
       where: {
         weekStart: {
           gte: weekStart,
           lte: weekStart,
         },
-      },
+      } as any,
     });
 
     if (existing.length > 0) {
@@ -103,7 +103,7 @@ export class WeeklySettlementService {
       settlements
         .filter((s) => s.totalWage > 0)
         .map((s) =>
-          prisma.weeklySettlement.create({
+          (prisma.weeklySettlement as any).create({
             data: {
               workerId: s.workerId,
               weekStart,
@@ -112,7 +112,7 @@ export class WeeklySettlementService {
               advanceUsed: s.advanceUsed,
               netPaid: s.netPaid,
               isSettled: false,
-            },
+            } as any,
           })
         )
     );
@@ -151,7 +151,7 @@ export class WeeklySettlementService {
       };
     }
 
-    const settlements = await prisma.weeklySettlement.findMany({
+    const settlements = await (prisma.weeklySettlement as any).findMany({
       where,
       include: {
         worker: {
@@ -163,7 +163,7 @@ export class WeeklySettlementService {
           },
         },
       },
-      orderBy: [{ weekStart: 'desc' }, { worker: { name: 'asc' } }],
+      orderBy: [{ weekStart: 'desc' }, { worker: { name: 'asc' } }] as any,
     });
 
     return settlements;
@@ -176,10 +176,10 @@ export class WeeklySettlementService {
     const date = paymentDate || new Date();
 
     // Get settlement records
-    const settlements = await prisma.weeklySettlement.findMany({
+    const settlements = await (prisma.weeklySettlement as any).findMany({
       where: {
         id: { in: settlementIds },
-      },
+      } as any,
       include: {
         worker: true,
       },
@@ -223,9 +223,8 @@ export class WeeklySettlementService {
               amount: -settlement.advanceUsed,
               type: 'ADJUSTED',
               date,
-              note: `Advance adjusted from weekly settlement (${
-                settlement.weekStart.toISOString().split('T')[0]
-              } to ${settlement.weekEnd.toISOString().split('T')[0]})`,
+              note: `Advance adjusted from weekly settlement (${settlement.weekStart.toISOString().split('T')[0]
+                } to ${settlement.weekEnd.toISOString().split('T')[0]})`,
             },
           });
 
@@ -241,16 +240,15 @@ export class WeeklySettlementService {
 
         // Create cash entry for net paid
         if (settlement.netPaid > 0) {
-          const cashEntry = await tx.cashEntry.create({
+          const cashEntry = await (tx.cashEntry as any).create({
             data: {
               date,
               type: 'DEBIT',
               amount: settlement.netPaid,
-              description: `Weekly wage settlement - ${settlement.worker.name} (${
-                settlement.weekStart.toISOString().split('T')[0]
-              } to ${settlement.weekEnd.toISOString().split('T')[0]})`,
-              category: 'WAGE',
-            },
+              description: `Weekly wage settlement - ${settlement.worker.name} (${settlement.weekStart.toISOString().split('T')[0]
+                } to ${settlement.weekEnd.toISOString().split('T')[0]})`,
+              category: 'Worker Wages',
+            } as any,
           });
           cashEntries.push(cashEntry);
         }

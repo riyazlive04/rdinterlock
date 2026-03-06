@@ -8,7 +8,7 @@ export const createExpenseSchema = z.object({
   amount: z.number().positive('Amount must be positive'),
   notes: z.string().optional(),
   workerId: z.string().uuid('Invalid worker ID').optional(),
-  paymentMode: z.enum(['CASH', 'UPI', 'BANK']).optional(),
+  paymentMode: z.enum(['CASH', 'UPI', 'BANK', 'CHEQUE', 'BANK_TRANSFER']).optional(),
   // Material tracking fields
   materialId: z.string().uuid('Invalid material ID').optional(),
   quantity: z.number().positive('Quantity must be positive').optional(),
@@ -19,7 +19,7 @@ export const updateExpenseSchema = z.object({
   category: z.enum(['FUEL', 'MAINTENANCE', 'SALARY', 'GENERAL', 'MATERIAL', 'FOOD', 'OTHER']).optional(),
   amount: z.number().positive().optional(),
   notes: z.string().optional(),
-  paymentMode: z.enum(['CASH', 'UPI', 'BANK']).optional(),
+  paymentMode: z.enum(['CASH', 'UPI', 'BANK', 'CHEQUE', 'BANK_TRANSFER']).optional(),
   materialId: z.string().uuid().optional(),
   quantity: z.number().positive().optional(),
   pricePerUnit: z.number().positive().optional(),

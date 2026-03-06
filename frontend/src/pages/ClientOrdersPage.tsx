@@ -21,7 +21,8 @@ const ClientOrdersPage = () => {
     const [editing, setEditing] = useState<any>(null);
     const [filterClient, setFilterClient] = useState("");
     const [filterStatus, setFilterStatus] = useState("");
-    const [form, setForm] = useState({ clientId: "", brickTypeId: "", quantity: "", rate: "", orderDate: new Date().toISOString().split("T")[0], expectedDispatchDate: "", status: "PENDING", notes: "" });
+    const [form, setForm] = useState({ clientId: "", brickTypeId: "", quantity: "", rate: "", totalAmount: "", orderDate: new Date().toISOString().split("T")[0], expectedDispatchDate: "", status: "PENDING", notes: "" });
+    const [autoDetect, setAutoDetect] = useState(true);
 
     const { data: orders = [], isLoading } = useQuery({
         queryKey: ["client-orders", filterClient, filterStatus],
@@ -55,27 +56,47 @@ const ClientOrdersPage = () => {
         onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["client-orders"] }); toast.success("✅ Order deleted"); },
     });
 
-    const resetForm = () => setForm({ clientId: "", brickTypeId: "", quantity: "", rate: "", orderDate: new Date().toISOString().split("T")[0], expectedDispatchDate: "", status: "PENDING", notes: "" });
+    const resetForm = () => {
+        setForm({ clientId: "", brickTypeId: "", quantity: "", rate: "", totalAmount: "", orderDate: new Date().toISOString().split("T")[0], expectedDispatchDate: "", status: "PENDING", notes: "" });
+        setAutoDetect(true);
+    };
 
     const openEdit = (o: any) => {
         setEditing(o);
         setForm({
-            clientId: o.clientId, brickTypeId: o.brickTypeId, quantity: String(o.quantity), rate: String(o.rate),
+            clientId: o.clientId, brickTypeId: o.brickTypeId, quantity: String(o.quantity), rate: String(o.rate), totalAmount: String(o.totalAmount || ""),
             orderDate: new Date(o.orderDate).toISOString().split("T")[0],
             expectedDispatchDate: o.expectedDispatchDate ? new Date(o.expectedDispatchDate).toISOString().split("T")[0] : "",
             status: o.status, notes: o.notes || "",
         });
+        setAutoDetect(false);
         setShowModal(true);
     };
 
+    const handleCalcChange = (field: 'quantity' | 'rate', value: string) => {
+        const newForm = { ...form, [field]: value };
+        if (autoDetect) {
+            const q = parseInt(newForm.quantity) || 0;
+            const r = parseFloat(newForm.rate) || 0;
+            if (q > 0 && r > 0) newForm.totalAmount = String(q * r);
+            else newForm.totalAmount = "";
+        }
+        setForm(newForm);
+    };
+
+    const handleTotalOverride = (val: string) => {
+        setAutoDetect(false);
+        setForm({ ...form, totalAmount: val });
+    };
+
     const handleSubmit = () => {
-        if (!form.clientId || !form.brickTypeId || !form.quantity) return toast.error("Fill required fields");
+        if (!form.clientId || !form.brickTypeId || !form.quantity || !form.totalAmount) return toast.error("Fill required fields");
         const payload = {
             clientId: form.clientId,
             brickTypeId: form.brickTypeId,
             quantity: parseInt(form.quantity),
             rate: parseFloat(form.rate) || 0,
-            totalAmount: parseInt(form.quantity) * (parseFloat(form.rate) || 0),
+            totalAmount: parseFloat(form.totalAmount) || 0,
             orderDate: form.orderDate,
             expectedDispatchDate: form.expectedDispatchDate || undefined,
             status: form.status,
@@ -114,7 +135,7 @@ const ClientOrdersPage = () => {
                             <div className="flex justify-between items-start">
                                 <div className="flex-1">
                                     <h3 className="text-sm font-semibold">{o.client?.name}</h3>
-                                    <p className="text-xs text-muted-foreground mt-0.5">{o.brickType?.size} • {o.quantity} pcs • ₹{o.totalAmount?.toLocaleString()}</p>
+                                    <p className="text-xs text-muted-foreground mt-0.5">{o.brickType?.size} • {o.quantity} pcs • Est Amount: ₹{o.totalAmount?.toLocaleString()}</p>
                                     <p className="text-[10px] text-muted-foreground mt-0.5">
                                         Ordered: {new Date(o.orderDate).toLocaleDateString()}
                                         {o.expectedDispatchDate && ` • Dispatch: ${new Date(o.expectedDispatchDate).toLocaleDateString()}`}
@@ -140,21 +161,39 @@ const ClientOrdersPage = () => {
                             <button onClick={() => { setShowModal(false); setEditing(null); resetForm(); }}><X className="h-5 w-5" /></button>
                         </div>
                         <div className="space-y-3">
-                            <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm">
-                                <option value="">Select Client *</option>
-                                {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
+                            <div className="space-y-2">
+                                <select value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm">
+                                    <option value="">Select Client *</option>
+                                    {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                                {form.clientId && (
+                                    <div className="text-xs text-muted-foreground bg-secondary/30 p-2 rounded-lg border border-border/50">
+                                        {(() => {
+                                            const c = clients.find((x: any) => x.id === form.clientId);
+                                            if (!c) return null;
+                                            return (
+                                                <div className="flex justify-between font-medium">
+                                                    <span>Order Total: <span className="text-foreground">₹{c.totalOrderAmount?.toLocaleString() || 0}</span></span>
+                                                    <span>Advance: <span className="text-foreground">₹{c.advanceBalance?.toLocaleString() || 0}</span></span>
+                                                    <span>Pending: <span className="text-destructive font-bold">₹{c.pendingAmount?.toLocaleString() || 0}</span></span>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
+                            </div>
                             <select value={form.brickTypeId} onChange={(e) => setForm({ ...form, brickTypeId: e.target.value })} className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm">
                                 <option value="">Select Brick Type *</option>
                                 {brickTypes.map((b: any) => <option key={b.id} value={b.id}>{b.size}</option>)}
                             </select>
                             <div className="grid grid-cols-2 gap-2">
-                                <input value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} type="number" placeholder="Quantity *" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />
-                                <input value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} type="number" placeholder="Rate per brick" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />
+                                <input value={form.quantity} onChange={(e) => handleCalcChange('quantity', e.target.value)} type="number" placeholder="Quantity *" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />
+                                <input value={form.rate} onChange={(e) => handleCalcChange('rate', e.target.value)} type="number" placeholder="Rate per brick" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />
                             </div>
-                            {form.quantity && form.rate && (
-                                <p className="text-xs text-muted-foreground">Total: ₹{(parseInt(form.quantity) * parseFloat(form.rate)).toLocaleString()}</p>
-                            )}
+                            <div>
+                                <label className="text-xs font-medium text-foreground ml-1">ESTIMATED AMOUNT (₹) *</label>
+                                <input value={form.totalAmount} onChange={(e) => handleTotalOverride(e.target.value)} type="number" placeholder="Estimated Amount *" className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm mt-1" />
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <input value={form.orderDate} onChange={(e) => setForm({ ...form, orderDate: e.target.value })} type="date" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />
                                 <input value={form.expectedDispatchDate} onChange={(e) => setForm({ ...form, expectedDispatchDate: e.target.value })} type="date" placeholder="Expected Dispatch" className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm" />

@@ -230,14 +230,15 @@ export class MonthlySettlementService {
 
         // Create cash entry for net paid
         if (settlement.netPaid > 0) {
-          const cashEntry = await tx.cashEntry.create({
+          const cashEntry = await (tx.cashEntry as any).create({
             data: {
               date,
               type: 'DEBIT',
               amount: settlement.netPaid,
               description: `Monthly salary - ${settlement.worker.name} (${settlement.month}/${settlement.year})`,
-              category: 'SALARY',
-            },
+              category: 'Staff Salary',
+              workerId: settlement.workerId,
+            } as any,
           });
           cashEntries.push(cashEntry);
         }

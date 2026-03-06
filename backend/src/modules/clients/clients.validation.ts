@@ -45,6 +45,7 @@ export const updateOrderSchema = z.object({
 export const createPaymentSchema = z.object({
     clientId: z.string().uuid(),
     orderId: z.string().uuid().optional(),
+    type: z.enum(['PAYMENT', 'ADVANCE']).optional(),
     amount: z.number().positive(),
     paymentDate: z.string(),
     paymentMethod: z.string().min(1),
@@ -52,6 +53,7 @@ export const createPaymentSchema = z.object({
 });
 
 export const updatePaymentSchema = z.object({
+    type: z.enum(['PAYMENT', 'ADVANCE']).optional(),
     amount: z.number().positive().optional(),
     paymentDate: z.string().optional(),
     paymentMethod: z.string().optional(),

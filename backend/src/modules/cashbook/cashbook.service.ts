@@ -4,14 +4,19 @@ import { CreateCashEntryInput, UpdateCashEntryInput } from './cashbook.validatio
 
 export class CashbookService {
   async createCashEntry(data: CreateCashEntryInput) {
-    const cashEntry = await prisma.cashEntry.create({
+    const cashEntry = await (prisma.cashEntry as any).create({
       data: {
         date: new Date(data.date),
         type: data.type,
         amount: data.amount,
         description: data.description,
         category: data.category,
-      },
+        paymentMode: data.paymentMode || 'CASH',
+        customerId: data.customerId || null,
+        workerId: data.workerId || null,
+        materialId: data.materialId || null,
+        isRecordOnly: data.isRecordOnly || false,
+      } as any,
     });
 
     return cashEntry;
@@ -21,7 +26,8 @@ export class CashbookService {
     startDate?: string,
     endDate?: string,
     type?: string,
-    category?: string
+    category?: string,
+    search?: string
   ) {
     const where: any = {};
 
@@ -37,12 +43,37 @@ export class CashbookService {
     }
 
     if (category) {
-      where.category = category;
+      where.category = {
+        equals: category,
+        mode: 'insensitive',
+      };
     }
 
-    const entries = await prisma.cashEntry.findMany({
+    if (search) {
+      const searchLower = search.toLowerCase();
+      where.OR = [
+        { description: { contains: search, mode: 'insensitive' } },
+        { notes: { contains: search, mode: 'insensitive' } },
+        {
+          customer: {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search, mode: 'insensitive' } },
+              { address: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        },
+      ];
+    }
+
+    const entries = await (prisma.cashEntry as any).findMany({
       where,
       orderBy: { date: 'desc' },
+      include: {
+        customer: { select: { id: true, name: true } },
+        worker: { select: { id: true, name: true, role: true } },
+        material: { select: { id: true, name: true, unit: true } },
+      }
     });
 
     return entries;
@@ -69,9 +100,11 @@ export class CashbookService {
       throw new AppError('Cash entry not found', 404);
     }
 
-    const updated = await prisma.cashEntry.update({
+    const updated = await (prisma.cashEntry as any).update({
       where: { id },
-      data,
+      data: {
+        ...data,
+      } as any,
     });
 
     return updated;
@@ -94,37 +127,143 @@ export class CashbookService {
   }
 
   async getCashBalance(startDate?: string, endDate?: string) {
-    const where: any = {};
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    if (startDate && endDate) {
-      where.date = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
-    }
+    // Get all entries for balance calculation
+    const allEntries = await (prisma.cashEntry as any).findMany();
 
-    const entries = await prisma.cashEntry.findMany({
-      where,
+    // Get entries for specific summary cards
+    const todayEntries = await (prisma.cashEntry as any).findMany({
+      where: {
+        date: { gte: startOfToday }
+      }
+    });
+
+    const monthEntries = await (prisma.cashEntry as any).findMany({
+      where: {
+        date: { gte: startOfMonth }
+      }
     });
 
     let totalCredit = 0;
     let totalDebit = 0;
-
-    entries.forEach((entry: any) => {
-      if (entry.type === 'CREDIT') {
-        totalCredit += entry.amount;
-      } else {
-        totalDebit += entry.amount;
-      }
+    allEntries.forEach((entry: any) => {
+      if (entry.isRecordOnly) return;
+      if (entry.type === 'CREDIT') totalCredit += entry.amount;
+      else totalDebit += entry.amount;
     });
 
-    const balance = totalCredit - totalDebit;
+    let todayMoneyIn = 0;
+    let todayMoneyOut = 0;
+    todayEntries.forEach((entry: any) => {
+      if (entry.isRecordOnly) return;
+      if (entry.type === 'CREDIT') todayMoneyIn += entry.amount;
+      else todayMoneyOut += entry.amount;
+    });
+
+    let thisMonthExpenses = 0;
+    monthEntries.forEach((entry: any) => {
+      if (entry.isRecordOnly) return;
+      if (entry.type === 'DEBIT') thisMonthExpenses += entry.amount;
+    });
 
     return {
       totalCredit,
       totalDebit,
-      balance,
-      totalEntries: entries.length,
+      balance: totalCredit - totalDebit,
+      todayMoneyIn,
+      todayMoneyOut,
+      thisMonthExpenses,
+      totalEntries: allEntries.length,
     };
+  }
+
+  async importCashEntries(entries: any[]) {
+    const results = {
+      added: 0,
+      duplicates: 0,
+      errors: 0,
+      details: [] as string[],
+    };
+
+    for (const entry of entries) {
+      try {
+        // 1. Basic Validation
+        if (!entry.Date || !entry.Amount || !entry.Type || !entry['Client Name']) {
+          results.errors++;
+          results.details.push(`Row missing required fields: ${entry['Client Name'] || 'Unknown'}`);
+          continue;
+        }
+
+        const date = new Date(entry.Date);
+        const amount = parseFloat(entry.Amount);
+        const type = entry.Type.toUpperCase() === 'MONEY IN' ? 'CREDIT' : 'DEBIT';
+        const category = entry.Category || 'OTHER';
+        const description = entry.Notes || entry.Category || 'Imported Entry';
+        const paymentMode = (entry['Payment Method'] || 'CASH').toUpperCase();
+
+        if (isNaN(date.getTime()) || isNaN(amount)) {
+          results.errors++;
+          results.details.push(`Invalid date or amount for client: ${entry['Client Name']}`);
+          continue;
+        }
+
+        // 2. Client Handling
+        let client = await prisma.customer.findFirst({
+          where: { name: { equals: entry['Client Name'], mode: 'insensitive' } },
+        });
+
+        if (!client) {
+          client = await prisma.customer.create({
+            data: {
+              name: entry['Client Name'],
+              phone: entry.Phone ? String(entry.Phone) : null,
+              address: entry.Location || null,
+            },
+          });
+        }
+
+        // 3. Duplicate Prevention
+        const existing = await (prisma.cashEntry as any).findFirst({
+          where: {
+            date: {
+              gte: new Date(date.setHours(0, 0, 0, 0)),
+              lte: new Date(date.setHours(23, 59, 59, 999)),
+            },
+            customerId: client.id,
+            amount: amount,
+            category: { equals: category, mode: 'insensitive' },
+          },
+        });
+
+        if (existing) {
+          results.duplicates++;
+          continue;
+        }
+
+        // 4. Create Entry
+        await (prisma.cashEntry as any).create({
+          data: {
+            date: new Date(entry.Date),
+            type,
+            amount,
+            description,
+            category,
+            paymentMode,
+            customerId: client.id,
+            isRecordOnly: false,
+          },
+        });
+
+        results.added++;
+      } catch (error: any) {
+        results.errors++;
+        results.details.push(`Error processing ${entry['Client Name']}: ${error.message}`);
+      }
+    }
+
+    return results;
   }
 }

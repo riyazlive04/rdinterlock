@@ -28,13 +28,13 @@ export class MaterialService {
         materialUsages: {
           include: {
             expense: true,
-          },
+          } as any,
           orderBy: {
             date: 'desc',
-          },
+          } as any,
           take: 10,
         },
-      },
+      } as any,
     });
 
     if (!material) {
@@ -165,7 +165,7 @@ export class MaterialService {
       include: {
         material: true,
         expense: true,
-      },
+      } as any,
       orderBy: {
         date: 'desc',
       },
@@ -192,7 +192,7 @@ export class MaterialService {
       where,
       include: {
         material: true,
-      },
+      } as any,
     });
 
     // Group by material

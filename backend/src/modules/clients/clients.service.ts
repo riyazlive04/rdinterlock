@@ -16,12 +16,37 @@ export class ClientsService {
                 { phone: { contains: search, mode: 'insensitive' } },
             ];
         }
-        return prisma.customer.findMany({
+        const clients = await prisma.customer.findMany({
             where,
             orderBy: { name: 'asc' },
             include: {
                 _count: { select: { orders: true, payments: true } },
+                orders: { select: { totalAmount: true } },
+                payments: { select: { type: true, amount: true, paymentMethod: true } }
             },
+        });
+
+        return clients.map((client: any) => {
+            const totalOrderAmount = client.orders.reduce((sum: number, o: any) => sum + o.totalAmount, 0);
+
+            const totalAdvance = client.payments.filter((p: any) => p.type === 'ADVANCE').reduce((sum: number, p: any) => sum + p.amount, 0);
+            const advanceUsed = client.payments.filter((p: any) => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((sum: number, p: any) => sum + p.amount, 0);
+            const totalPaid = client.payments.filter((p: any) => p.type === 'PAYMENT').reduce((sum: number, p: any) => sum + p.amount, 0);
+
+            const pendingAmount = totalOrderAmount - totalPaid;
+            const advanceBalance = totalAdvance - advanceUsed;
+
+            const { orders, payments, ...clientData } = client;
+
+            return {
+                ...clientData,
+                totalOrderAmount,
+                totalAdvance,
+                advanceUsed,
+                totalPaid,
+                pendingAmount,
+                advanceBalance
+            };
         });
     }
 
@@ -45,7 +70,17 @@ export class ClientsService {
             },
         });
         if (!client) throw new AppError('Client not found', 404);
-        return client;
+
+        const totalAdvance = client.payments.filter(p => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
+        const advanceUsed = client.payments.filter(p => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((s, p) => s + p.amount, 0);
+        const advanceBalance = totalAdvance - advanceUsed;
+
+        return {
+            ...client,
+            totalAdvance,
+            advanceUsed,
+            advanceBalance
+        };
     }
 
     async updateClient(id: string, data: any) {
@@ -130,27 +165,112 @@ export class ClientsService {
     // ═══════════════════════ PAYMENTS ═══════════════════════
 
     async createPayment(data: any) {
-        const payment = await prisma.clientPayment.create({
-            data: {
-                clientId: data.clientId,
-                orderId: data.orderId || null,
-                amount: data.amount,
-                paymentDate: new Date(data.paymentDate),
-                paymentMethod: data.paymentMethod,
-                notes: data.notes,
-            },
-            include: { client: true, order: true },
-        });
+        const isAdvance = data.type === 'ADVANCE';
 
-        // Check if order is fully paid → auto-update status to COMPLETED
+        if (isAdvance) {
+            const advancePayment = await prisma.clientPayment.create({
+                data: {
+                    clientId: data.clientId,
+                    type: 'ADVANCE',
+                    amount: data.amount,
+                    paymentDate: new Date(data.paymentDate),
+                    paymentMethod: data.paymentMethod,
+                    notes: data.notes,
+                },
+                include: { client: true, order: true },
+            });
+
+            await (prisma.cashEntry as any).create({
+                data: {
+                    date: advancePayment.paymentDate,
+                    type: 'CREDIT',
+                    amount: advancePayment.amount,
+                    description: `Advance received from ${(advancePayment as any).client.name}${advancePayment.notes ? ': ' + advancePayment.notes : ''}`,
+                    category: 'Advance Received',
+                    paymentMode: advancePayment.paymentMethod,
+                    customerId: advancePayment.clientId,
+                } as any
+            });
+            return advancePayment;
+        }
+
+        // Regular Payment (or partly regular, partly advance applied)
+        let newPayment: any = null;
+
+        if (data.amount > 0) {
+            newPayment = await prisma.clientPayment.create({
+                data: {
+                    clientId: data.clientId,
+                    orderId: data.orderId || null,
+                    type: 'PAYMENT',
+                    amount: data.amount,
+                    paymentDate: new Date(data.paymentDate),
+                    paymentMethod: data.paymentMethod,
+                    notes: data.notes,
+                },
+                include: { client: true, order: true },
+            });
+
+            await (prisma.cashEntry as any).create({
+                data: {
+                    date: newPayment.paymentDate,
+                    type: 'CREDIT',
+                    amount: newPayment.amount,
+                    description: `Client payment from ${(newPayment as any).client.name}${newPayment.notes ? ': ' + newPayment.notes : ''}`,
+                    category: 'Client Payment',
+                    paymentMode: newPayment.paymentMethod,
+                    customerId: newPayment.clientId,
+                } as any
+            });
+        }
+
+        // Auto-Apply Advance Logic if there is an order
         if (data.orderId) {
             const order = await prisma.clientOrder.findUnique({
                 where: { id: data.orderId },
+                include: { payments: true }
+            });
+
+            if (order) {
+                const orderTotalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+                const currentPending = order.totalAmount - orderTotalPaid;
+
+                if (currentPending > 0) {
+                    const allClientPayments = await prisma.clientPayment.findMany({
+                        where: { clientId: data.clientId }
+                    });
+                    const totalAdvance = allClientPayments.filter(p => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
+                    const advanceUsed = allClientPayments.filter(p => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((s, p) => s + p.amount, 0);
+                    const advanceBalance = totalAdvance - advanceUsed;
+
+                    if (advanceBalance > 0) {
+                        const amountToApply = Math.min(currentPending, advanceBalance);
+
+                        await prisma.clientPayment.create({
+                            data: {
+                                clientId: data.clientId,
+                                orderId: data.orderId,
+                                type: 'PAYMENT',
+                                amount: amountToApply,
+                                paymentDate: new Date(data.paymentDate),
+                                paymentMethod: 'ADVANCE_APPLIED',
+                                notes: 'System Auto-Applied Advance'
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Update Order Status
+        if (data.orderId) {
+            const orderFinal = await prisma.clientOrder.findUnique({
+                where: { id: data.orderId },
                 include: { payments: true },
             });
-            if (order) {
-                const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
-                if (totalPaid >= order.totalAmount) {
+            if (orderFinal) {
+                const totalPaidFinal = orderFinal.payments.reduce((sum, p) => sum + p.amount, 0);
+                if (totalPaidFinal >= orderFinal.totalAmount) {
                     await prisma.clientOrder.update({
                         where: { id: data.orderId },
                         data: { status: 'COMPLETED' },
@@ -158,7 +278,8 @@ export class ClientsService {
                 }
             }
         }
-        return payment;
+
+        return newPayment || { message: "Advance applied successfully" };
     }
 
     async getAllPayments(filters?: { clientId?: string }) {
@@ -186,6 +307,18 @@ export class ClientsService {
     async deletePayment(id: string) {
         const payment = await prisma.clientPayment.findUnique({ where: { id } });
         if (!payment) throw new AppError('Payment not found', 404);
+
+        if (payment.paymentMethod !== 'ADVANCE_APPLIED') {
+            await (prisma.cashEntry as any).deleteMany({
+                where: {
+                    customerId: payment.clientId,
+                    amount: payment.amount,
+                    date: payment.paymentDate,
+                    category: payment.type === 'ADVANCE' ? 'Advance Received' : 'Client Payment'
+                } as any
+            });
+        }
+
         await prisma.clientPayment.delete({ where: { id } });
         return { message: 'Payment deleted' };
     }
@@ -265,6 +398,13 @@ export class ClientsService {
         const totalPaid = orders.reduce((s, o) => s + o.payments.reduce((ps, p) => ps + p.amount, 0), 0);
         const pendingAmount = totalOrderAmount - totalPaid;
 
-        return { orders, totalOrderAmount, totalPaid, pendingAmount };
+        const allPayments = await prisma.clientPayment.findMany({
+            where: { clientId }
+        });
+        const totalAdvance = allPayments.filter(p => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
+        const advanceUsed = allPayments.filter(p => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((s, p) => s + p.amount, 0);
+        const advanceBalance = totalAdvance - advanceUsed;
+
+        return { orders, totalOrderAmount, totalPaid, pendingAmount, totalAdvance, advanceUsed, advanceBalance };
     }
 }

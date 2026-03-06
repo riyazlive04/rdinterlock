@@ -6,7 +6,7 @@ import { DatePickerField } from "@/components/DatePickerField";
 import { PillSelector } from "@/components/PillSelector";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Save, Plus, X, Fuel, UtensilsCrossed, PackageOpen, MoreHorizontal, Eye, Loader2, Receipt } from "lucide-react";
+import { Save, Plus, X, Fuel, UtensilsCrossed, PackageOpen, MoreHorizontal, Eye, Loader2, Receipt, Check } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "@/api/settings.api";
 import { workersApi } from "@/api/workers.api";
@@ -23,6 +23,7 @@ const DailyEntry = () => {
   const [brickTypeId, setBrickTypeId] = useState("");
   const [machineId, setMachineId] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [damagedQuantity, setDamagedQuantity] = useState("");
   const [workers, setWorkers] = useState<string[]>([""]);
   const [sameProduction, setSameProduction] = useState(true);
   const [workerQuantities, setWorkerQuantities] = useState<Record<number, string>>({});
@@ -130,10 +131,22 @@ const DailyEntry = () => {
     return Object.values(workerQuantities).reduce((sum, q) => sum + (parseInt(q) || 0), 0);
   };
 
+  const calcAvailable = () => {
+    const total = calcTotal();
+    const damaged = parseInt(damagedQuantity) || 0;
+    return Math.max(0, total - damaged);
+  };
+
   const saveProduction = () => {
     const totalQty = calcTotal();
+    const damagedQty = parseInt(damagedQuantity) || 0;
+
     if (totalQty <= 0) {
       toast.error("Please enter a valid quantity");
+      return;
+    }
+    if (damagedQty > totalQty) {
+      toast.error("Damaged bricks cannot be greater than produced bricks");
       return;
     }
     if (!machineId || !brickTypeId) {
@@ -147,6 +160,7 @@ const DailyEntry = () => {
       shift: shift as any,
       brickTypeId,
       quantity: totalQty,
+      damagedBricks: damagedQty,
       notes,
       workers: workers
         .filter(w => w !== "")
@@ -249,6 +263,33 @@ const DailyEntry = () => {
               placeholder="Enter number of bricks"
             />
           </FormField>
+
+          <FormField label="Damaged Bricks">
+            <BigNumberInput
+              value={damagedQuantity}
+              onChange={setDamagedQuantity}
+              placeholder="Enter number of damaged bricks"
+            />
+          </FormField>
+
+          <div className={`p-4 rounded-2xl border-2 transition-all ${parseInt(damagedQuantity) > calcTotal() ? 'bg-destructive/10 border-destructive shadow-destructive/10' : 'bg-primary/10 border-primary shadow-primary/10'}`}>
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Available Bricks</p>
+                <p className={`text-2xl font-black ${parseInt(damagedQuantity) > calcTotal() ? 'text-destructive' : 'text-primary'}`}>
+                  {calcAvailable().toLocaleString()}
+                </p>
+              </div>
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${parseInt(damagedQuantity) > calcTotal() ? 'bg-destructive/20' : 'bg-primary/20'}`}>
+                {parseInt(damagedQuantity) > calcTotal() ? <X className="h-5 w-5 text-destructive" /> : <Check className="h-5 w-5 text-primary" />}
+              </div>
+            </div>
+            {parseInt(damagedQuantity) > calcTotal() && (
+              <p className="text-[10px] text-destructive font-bold mt-2">
+                ⚠️ Damaged bricks cannot be greater than produced bricks
+              </p>
+            )}
+          </div>
 
           {/* Quick Quantity Chips */}
           <div className="flex flex-wrap gap-2">

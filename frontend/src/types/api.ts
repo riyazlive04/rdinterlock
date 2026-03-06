@@ -161,7 +161,7 @@ export interface CreateExpenseRequest {
   amount: number;
   notes?: string;
   workerId?: string;
-  paymentMode?: 'CASH' | 'UPI' | 'BANK';
+  paymentMode?: 'CASH' | 'UPI' | 'BANK' | 'CHEQUE' | 'BANK_TRANSFER';
   materialId?: string;
   quantity?: number;
   pricePerUnit?: number;
@@ -196,16 +196,29 @@ export interface CreateCashEntryRequest {
   type: 'CREDIT' | 'DEBIT';
   amount: number;
   description: string;
-  category?: 'SALES' | 'EXPENSE' | 'LOAN' | 'OTHER';
+  category: string;
+  paymentMode?: 'CASH' | 'UPI' | 'BANK' | 'CHEQUE' | 'BANK_TRANSFER';
+  customerId?: string;
+  workerId?: string;
+  materialId?: string;
+  isRecordOnly?: boolean;
 }
 
 export interface CashEntry {
   id: string;
   date: string;
-  type: string;
+  type: 'CREDIT' | 'DEBIT';
   amount: number;
   description: string;
-  category?: string;
+  category: string;
+  paymentMode?: string;
+  customerId?: string;
+  workerId?: string;
+  materialId?: string;
+  isRecordOnly?: boolean;
+  customer?: { id: string; name: string };
+  worker?: { id: string; name: string; role: string };
+  material?: { id: string; name: string; unit: string };
   createdAt: string;
 }
 
@@ -213,6 +226,9 @@ export interface CashBalance {
   totalCredit: number;
   totalDebit: number;
   balance: number;
+  todayMoneyIn: number;
+  todayMoneyOut: number;
+  thisMonthExpenses: number;
   totalEntries: number;
 }
 

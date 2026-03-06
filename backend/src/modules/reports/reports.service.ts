@@ -26,11 +26,13 @@ export class ReportsService {
       _count: true,
     });
 
-    // Today's expenses
-    const todayExpenses = await prisma.expense.aggregate({
+    // Today's expenses (from Cash Book)
+    const todayExpenses = await (prisma.cashEntry as any).aggregate({
       where: {
         date: todayRange,
-      },
+        type: 'DEBIT',
+        isRecordOnly: false,
+      } as any,
       _sum: { amount: true },
       _count: true,
     });
@@ -60,9 +62,10 @@ export class ReportsService {
     );
 
     // Cash balance
-    const cashEntries = await prisma.cashEntry.findMany();
+    const cashEntries = await (prisma.cashEntry as any).findMany();
     let cashBalance = 0;
     cashEntries.forEach((entry: any) => {
+      if (entry.isRecordOnly) return;
       if (entry.type === 'CREDIT') {
         cashBalance += entry.amount;
       } else {
@@ -242,9 +245,13 @@ export class ReportsService {
       _sum: { totalAmount: true, transportCost: true, loadingCost: true },
     });
 
-    // Expenses
-    const expenses = await prisma.expense.findMany({
-      where: { date: dateRange },
+    // Expenses (from Cash Book)
+    const expenses = await (prisma.cashEntry as any).findMany({
+      where: {
+        date: dateRange,
+        type: 'DEBIT',
+        isRecordOnly: false,
+      } as any,
       include: {
         worker: {
           select: { name: true },
@@ -264,13 +271,14 @@ export class ReportsService {
     });
 
     // Cash entries
-    const cashEntries = await prisma.cashEntry.findMany({
-      where: { date: dateRange },
+    const cashEntries = await (prisma.cashEntry as any).findMany({
+      where: { date: dateRange } as any,
     });
 
     let cashCredit = 0;
     let cashDebit = 0;
     cashEntries.forEach((entry: any) => {
+      if (entry.isRecordOnly) return;
       if (entry.type === 'CREDIT') {
         cashCredit += entry.amount;
       } else {

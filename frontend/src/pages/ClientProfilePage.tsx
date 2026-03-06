@@ -66,7 +66,7 @@ const ClientProfilePage = () => {
                     {client.notes && <div className="flex items-start gap-2"><FileText className="h-4 w-4 text-muted-foreground mt-0.5" /> {client.notes}</div>}
                 </div>
                 {ledger && (
-                    <div className="grid grid-cols-3 gap-2 mt-4">
+                    <div className="grid grid-cols-2 gap-2 mt-4">
                         <div className="p-2.5 bg-blue-50 rounded-xl text-center">
                             <p className="text-[10px] text-blue-600 font-medium">Total Orders</p>
                             <p className="text-sm font-bold text-blue-700">₹{ledger.totalOrderAmount?.toLocaleString()}</p>
@@ -74,6 +74,10 @@ const ClientProfilePage = () => {
                         <div className="p-2.5 bg-green-50 rounded-xl text-center">
                             <p className="text-[10px] text-green-600 font-medium">Total Paid</p>
                             <p className="text-sm font-bold text-green-700">₹{ledger.totalPaid?.toLocaleString()}</p>
+                        </div>
+                        <div className="p-2.5 bg-purple-50 rounded-xl text-center">
+                            <p className="text-[10px] text-purple-600 font-medium">Advance Bal</p>
+                            <p className="text-sm font-bold text-purple-700">₹{ledger.advanceBalance?.toLocaleString() || 0}</p>
                         </div>
                         <div className="p-2.5 bg-red-50 rounded-xl text-center">
                             <p className="text-[10px] text-red-600 font-medium">Pending</p>

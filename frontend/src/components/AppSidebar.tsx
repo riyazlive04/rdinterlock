@@ -50,8 +50,6 @@ const clientLoungeItems = [
 
 const navItemsAfter = [
   { title: "Stock", url: "/stock", icon: Package },
-  { title: "Expenses", url: "/expenses", icon: Wallet },
-  { title: "Workers", url: "/workers", icon: Users },
   { title: "Attendance", url: "/attendance", icon: CalendarCheck },
   { title: "Cash Book", url: "/cash-book", icon: BookText },
   { title: "Reports", url: "/reports", icon: BarChart3 },

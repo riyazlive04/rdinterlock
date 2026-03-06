@@ -28,7 +28,6 @@ const bottomNavItems = [
 const moreNavItems = [
   { title: "Attendance", url: "/attendance", icon: CalendarCheck },
   { title: "Expenses", url: "/expenses", icon: Wallet },
-  { title: "Workers", url: "/workers", icon: Users },
   { title: "Reports", url: "/reports", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },
 ];

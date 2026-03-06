@@ -51,14 +51,14 @@ export class DispatchService {
 
       // Synchronize with CashBook if money received
       if (data.paidAmount && data.paidAmount > 0) {
-        await tx.cashEntry.create({
+        await (tx.cashEntry as any).create({
           data: {
             date: new Date(data.date),
             type: 'CREDIT',
             amount: data.paidAmount,
             description: `Payment from ${(dispatch as any).customer.name} (Dispatch: ${dispatch.id})`,
             category: 'SALES',
-          },
+          } as any,
         });
       }
 
@@ -143,24 +143,24 @@ export class DispatchService {
 
       // Sync with CashBook
       // 1. Remove any existing cash entry for this dispatch
-      await tx.cashEntry.deleteMany({
+      await (tx.cashEntry as any).deleteMany({
         where: {
           description: {
             contains: `(Dispatch: ${id})`,
           },
-        },
+        } as any,
       });
 
       // 2. Create new one if there's any paid amount
       if (updated.paidAmount && updated.paidAmount > 0) {
-        await tx.cashEntry.create({
+        await (tx.cashEntry as any).create({
           data: {
             date: updated.date,
             type: 'CREDIT',
             amount: updated.paidAmount,
-            description: `Payment from ${updated.customer.name} (Dispatch: ${id})`,
+            description: `Payment from ${(updated as any).customer.name} (Dispatch: ${id})`,
             category: 'SALES',
-          },
+          } as any,
         });
       }
 
@@ -179,12 +179,12 @@ export class DispatchService {
       }
 
       // Remove related cash entry
-      await tx.cashEntry.deleteMany({
+      await (tx.cashEntry as any).deleteMany({
         where: {
           description: {
             contains: `(Dispatch: ${id})`,
           },
-        },
+        } as any,
       });
 
       await tx.dispatch.delete({

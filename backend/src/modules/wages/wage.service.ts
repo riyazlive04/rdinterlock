@@ -286,15 +286,15 @@ export class WageService {
 
         // Create cash entry for net payable
         if (wage.netPayable > 0) {
-          const cashEntry = await tx.cashEntry.create({
+          const cashEntry = await (tx.cashEntry as any).create({
             data: {
               date,
               type: 'DEBIT',
               amount: wage.netPayable,
-              description: `Wage payment to ${wage.worker.name} for ${wage.date.toISOString().split('T')[0]
-                }`,
-              category: 'WAGE',
-            },
+              description: `Wage payment to ${wage.worker.name} for ${wage.date.toISOString().split('T')[0]}`,
+              category: 'Worker Wages',
+              workerId: wage.workerId,
+            } as any,
           });
           cashEntries.push(cashEntry);
         }

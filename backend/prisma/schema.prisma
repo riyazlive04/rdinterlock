@@ -65,6 +65,7 @@ model Worker {
   productionWorkers  ProductionWorker[]
   settlements        WeeklySettlement[]
   advances           WorkerAdvance[]
+  cashEntries        CashEntry[]
 
   @@map("workers")
 }
@@ -75,9 +76,11 @@ model Production {
   machineId   String
   shift       String
   brickTypeId String
-  quantity    Int
-  notes       String?
-  createdAt   DateTime           @default(now())
+  quantity        Int
+  damagedBricks   Int                @default(0)
+  availableBricks Int                @default(0)
+  notes           String?
+  createdAt       DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   workers     ProductionWorker[] @relation("ProductionToWorkers")
   brickType   BrickType          @relation(fields: [brickTypeId], references: [id])
@@ -111,6 +114,7 @@ model Customer {
   payments          ClientPayment[]
   dispatchSchedules DispatchSchedule[]
   dispatches        Dispatch[]
+  cashEntries       CashEntry[]
 
   @@map("customers")
 }
@@ -139,6 +143,7 @@ model ClientPayment {
   id            String       @id @default(uuid())
   clientId      String
   orderId       String?
+  type          String       @default("PAYMENT")
   amount        Float
   paymentDate   DateTime
   paymentMethod String
@@ -216,8 +221,16 @@ model CashEntry {
   amount      Float
   description String
   category    String
+  paymentMode String   @default("CASH")
+  customerId  String?
+  workerId    String?
+  materialId  String?
+  isRecordOnly Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  worker      Worker?   @relation(fields: [workerId], references: [id])
+  material    RawMaterial? @relation(fields: [materialId], references: [id])
 
   @@map("cash_entries")
 }
@@ -232,6 +245,7 @@ model RawMaterial {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   expenses    Expense[]
+  cashEntries CashEntry[]
   usages      MaterialUsage[]
 
   @@map("raw_materials")
