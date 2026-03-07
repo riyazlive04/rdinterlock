@@ -31,10 +31,11 @@ export class WageService {
     const prodNightRate = parseFloat(settings['production_night_rate'] || '0');
     const masonRate = parseFloat(settings['mason_rate'] || '0');
 
-    // Get all active workers (exclude Monthly payment type and restricted roles)
+    // Get all active workers (Worker type only, exclude Staff)
     const workers = await prisma.worker.findMany({
       where: {
         isActive: true,
+        employeeType: 'Worker',
         NOT: {
           paymentType: 'MONTHLY',
         },
@@ -292,7 +293,7 @@ export class WageService {
               type: 'DEBIT',
               amount: wage.netPayable,
               description: `Wage payment to ${wage.worker.name} for ${wage.date.toISOString().split('T')[0]}`,
-              category: 'Worker Wages',
+              category: wage.worker.employeeType === 'Staff' ? 'Staff Salary' : 'Worker Wages',
               workerId: wage.workerId,
             } as any,
           });
@@ -388,6 +389,7 @@ export class WageService {
     const workers = await prisma.worker.findMany({
       where: {
         isActive: true,
+        employeeType: 'Worker',
         NOT: { paymentType: 'MONTHLY' },
       },
     });

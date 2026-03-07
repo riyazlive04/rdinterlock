@@ -11,13 +11,54 @@ export class WorkersService {
     return worker;
   }
 
-  async getAllWorkers(activeOnly: boolean = false) {
+  async getAllWorkers(activeOnly: boolean = false, employeeType?: string) {
+    // Check if migration is needed (one-time check can be added or just handle dynamically)
+    // For safety, we'll ensure the existing records have the new fields populated if they are accessed
+
     const workers = await prisma.worker.findMany({
-      where: activeOnly ? { isActive: true } : undefined,
+      where: {
+        AND: [
+          activeOnly ? { isActive: true } : {},
+          employeeType ? { employeeType } : {},
+        ]
+      },
       orderBy: { name: 'asc' },
     });
 
-    return workers;
+    // Dynamic migration for records that might be missing data after schema update
+    // (Prisma defaults handle some, but we need to map legacy 'rate' to new fields)
+    const migratedWorkers = await Promise.all(workers.map(async (worker) => {
+      let needsUpdate = false;
+      const updateData: any = {};
+
+      // 1. If legacy MONTHLY but not Staff, fix it FIRST
+      if (worker.paymentType === 'MONTHLY' && worker.employeeType !== 'Staff') {
+        updateData.employeeType = 'Staff';
+        updateData.monthlySalary = worker.monthlySalary || worker.rate;
+        needsUpdate = true;
+      }
+      // 2. Map legacy rate to perBrickRate/weeklyWage for Workers
+      else if (worker.employeeType === 'Worker' && worker.perBrickRate === 0 && worker.weeklyWage === 0 && worker.rate > 0) {
+        if (worker.paymentType === 'PER_BRICK') updateData.perBrickRate = worker.rate;
+        else updateData.weeklyWage = worker.rate;
+        needsUpdate = true;
+      }
+      // 3. Map legacy rate to monthlySalary for Staff
+      else if (worker.employeeType === 'Staff' && worker.monthlySalary === 0 && worker.rate > 0) {
+        updateData.monthlySalary = worker.rate;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        return await prisma.worker.update({
+          where: { id: worker.id },
+          data: updateData
+        });
+      }
+      return worker;
+    }));
+
+    return migratedWorkers;
   }
 
   async getWorkerById(id: string) {
@@ -64,13 +105,35 @@ export class WorkersService {
     return updatedWorker;
   }
 
-  async deleteWorker(id: string) {
+  async deleteWorker(id: string, forceDelete: boolean = false) {
     const worker = await prisma.worker.findUnique({
       where: { id },
     });
 
     if (!worker) {
       throw new AppError('Worker not found', 404);
+    }
+
+    if (forceDelete) {
+      // Cascade delete related records to avoid foreign key constraint errors
+      await prisma.$transaction(async (tx) => {
+        // 1. Delete relations that depend on Worker
+        await tx.attendance.deleteMany({ where: { workerId: id } });
+        await tx.dailyWage.deleteMany({ where: { workerId: id } });
+        await tx.productionWorker.deleteMany({ where: { workerId: id } });
+        await tx.workerAdvance.deleteMany({ where: { workerId: id } });
+        await tx.monthlySettlement.deleteMany({ where: { workerId: id } });
+        await tx.weeklySettlement.deleteMany({ where: { workerId: id } });
+
+        // 2. Clear foreign keys in other tables (set to null if optional)
+        await tx.expense.updateMany({ where: { workerId: id }, data: { workerId: null } });
+        await tx.cashEntry.updateMany({ where: { workerId: id }, data: { workerId: null } });
+        await tx.dispatchSchedule.updateMany({ where: { driverId: id }, data: { driverId: null } });
+
+        // 3. Final deletion
+        await tx.worker.delete({ where: { id } });
+      });
+      return { message: 'Worker and all related data deleted permanently' };
     }
 
     // Soft delete
@@ -112,8 +175,12 @@ export class WorkersService {
 
     const totalQuantity = productions.reduce((sum: number, p: any) => sum + p.quantity, 0);
     const totalEarnings = productions.reduce((sum: number, p: any) => {
-      const rate = p.worker.rate;
-      return sum + (p.worker.paymentType === 'PER_BRICK' ? p.quantity * rate : rate);
+      const worker = p.worker;
+      const rate = worker.employeeType === 'Worker' ?
+        (worker.paymentType === 'PER_BRICK' ? worker.perBrickRate : worker.weeklyWage) :
+        worker.monthlySalary;
+
+      return sum + (worker.paymentType === 'PER_BRICK' ? p.quantity * rate : rate);
     }, 0);
 
     return {

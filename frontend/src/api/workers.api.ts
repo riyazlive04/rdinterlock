@@ -2,9 +2,9 @@ import apiClient from './apiClient';
 import type { ApiResponse, Worker, CreateWorkerRequest } from '../types/api';
 
 export const workersApi = {
-  getAll: async (activeOnly: boolean = true): Promise<Worker[]> => {
+  getAll: async (activeOnly: boolean = true, employeeType?: string): Promise<Worker[]> => {
     const response = await apiClient.get<any, ApiResponse<Worker[]>>('/workers', {
-      params: { activeOnly },
+      params: { activeOnly, employeeType },
     });
     return response.data;
   },
@@ -24,8 +24,8 @@ export const workersApi = {
     return response.data;
   },
 
-  delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/workers/${id}`);
+  delete: async (id: string, force: boolean = false): Promise<void> => {
+    await apiClient.delete(`/workers/${id}`, { params: { force } });
   },
 
   getStats: async (id: string, startDate?: string, endDate?: string) => {

@@ -8,6 +8,7 @@ export const dispatchApi = {
     customerId?: string;
     brickTypeId?: string;
     paymentStatus?: string;
+    status?: string;
   }): Promise<Dispatch[]> => {
     const response = await apiClient.get<any, ApiResponse<Dispatch[]>>('/dispatch', { params });
     return response.data;

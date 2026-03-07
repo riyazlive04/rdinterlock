@@ -18,13 +18,14 @@ export class DispatchController {
   });
 
   getDispatches = asyncHandler(async (req: Request, res: Response) => {
-    const { startDate, endDate, customerId, brickTypeId, paymentStatus } = req.query;
+    const { startDate, endDate, customerId, brickTypeId, paymentStatus, status } = req.query;
     const dispatches = await dispatchService.getDispatches(
       startDate as string,
       endDate as string,
       customerId as string,
       brickTypeId as string,
-      paymentStatus as string
+      paymentStatus as string,
+      status as string
     );
     sendSuccess(res, dispatches, 'Dispatches retrieved successfully');
   });

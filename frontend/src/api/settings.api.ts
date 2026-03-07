@@ -26,8 +26,8 @@ export const settingsApi = {
     return response.data;
   },
 
-  deleteMachine: async (id: string): Promise<void> => {
-    await apiClient.delete(`/settings/machines/${id}`);
+  deleteMachine: async (id: string, force: boolean = false): Promise<void> => {
+    await apiClient.delete(`/settings/machines/${id}`, { params: { force } });
   },
 
   // Brick Types
@@ -48,8 +48,8 @@ export const settingsApi = {
     return response.data;
   },
 
-  deleteBrickType: async (id: string): Promise<void> => {
-    await apiClient.delete(`/settings/brick-types/${id}`);
+  deleteBrickType: async (id: string, force: boolean = false): Promise<void> => {
+    await apiClient.delete(`/settings/brick-types/${id}`, { params: { force } });
   },
 
   // Raw Materials
@@ -65,8 +65,8 @@ export const settingsApi = {
     return response.data;
   },
 
-  deleteRawMaterial: async (id: string): Promise<void> => {
-    await apiClient.delete(`/settings/raw-materials/${id}`);
+  deleteRawMaterial: async (id: string, force: boolean = false): Promise<void> => {
+    await apiClient.delete(`/settings/raw-materials/${id}`, { params: { force } });
   },
 
   // System Settings

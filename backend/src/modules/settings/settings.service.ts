@@ -55,13 +55,40 @@ export class SettingsService {
     return updated;
   }
 
-  async deleteMachine(id: string) {
+  async deleteMachine(id: string, forceDelete: boolean = false) {
     const machine = await prisma.machine.findUnique({
       where: { id },
     });
 
     if (!machine) {
       throw new AppError('Machine not found', 404);
+    }
+
+    if (forceDelete) {
+      await prisma.$transaction(async (tx) => {
+        // 1. Find all production IDs for this machine
+        const productions = await tx.production.findMany({
+          where: { machineId: id },
+          select: { id: true }
+        });
+        const productionIds = productions.map(p => p.id);
+
+        // 2. Delete ProductionWorkers first
+        await tx.productionWorker.deleteMany({
+          where: { productionId: { in: productionIds } }
+        });
+
+        // 3. Delete Productions
+        await tx.production.deleteMany({
+          where: { machineId: id }
+        });
+
+        // 4. Delete Machine
+        await tx.machine.delete({
+          where: { id }
+        });
+      });
+      return { message: 'Machine and related production records deleted permanently' };
     }
 
     // Soft delete
@@ -128,13 +155,39 @@ export class SettingsService {
     return updated;
   }
 
-  async deleteBrickType(id: string) {
+  async deleteBrickType(id: string, forceDelete: boolean = false) {
     const brickType = await prisma.brickType.findUnique({
       where: { id },
     });
 
     if (!brickType) {
       throw new AppError('Brick type not found', 404);
+    }
+
+    if (forceDelete) {
+      await prisma.$transaction(async (tx) => {
+        // 1. Find all production IDs for this brick type
+        const productions = await tx.production.findMany({
+          where: { brickTypeId: id },
+          select: { id: true }
+        });
+        const productionIds = productions.map(p => p.id);
+
+        // 2. Delete relations that depend on BrickType or its productions
+        await tx.productionWorker.deleteMany({
+          where: { productionId: { in: productionIds } }
+        });
+        await tx.production.deleteMany({ where: { brickTypeId: id } });
+
+        // 3. Delete other direct relations
+        await tx.clientOrder.deleteMany({ where: { brickTypeId: id } });
+        await tx.dispatchSchedule.deleteMany({ where: { brickTypeId: id } });
+        await tx.dispatch.deleteMany({ where: { brickTypeId: id } });
+
+        // 4. Delete BrickType
+        await tx.brickType.delete({ where: { id } });
+      });
+      return { message: 'Brick type and all related records deleted permanently' };
     }
 
     // Soft delete
@@ -172,13 +225,28 @@ export class SettingsService {
     return materials;
   }
 
-  async deleteRawMaterial(id: string) {
+  async deleteRawMaterial(id: string, forceDelete: boolean = false) {
     const material = await prisma.rawMaterial.findUnique({
       where: { id },
     });
 
     if (!material) {
       throw new AppError('Raw material not found', 404);
+    }
+
+    if (forceDelete) {
+      await prisma.$transaction(async (tx) => {
+        // 1. Delete direct relations
+        await tx.materialUsage.deleteMany({ where: { materialId: id } });
+
+        // 2. Clear foreign keys in linked tables
+        await tx.expense.updateMany({ where: { materialId: id }, data: { materialId: null } });
+        await tx.cashEntry.updateMany({ where: { materialId: id }, data: { materialId: null } });
+
+        // 3. Delete RawMaterial
+        await tx.rawMaterial.delete({ where: { id } });
+      });
+      return { message: 'Raw material and related records deleted permanently' };
     }
 
     // Soft delete
@@ -201,7 +269,7 @@ export class SettingsService {
         orderBy: { size: 'asc' },
       }),
       prisma.worker.findMany({
-        where: { isActive: true },
+        where: { isActive: true, employeeType: 'Worker' },
         orderBy: { name: 'asc' },
       }),
       prisma.rawMaterial.findMany({

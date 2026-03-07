@@ -19,6 +19,7 @@ router.get('/:id/ledger', ctrl.getClientLedger);
 // ─── Orders ───
 router.post('/orders', ctrl.createOrder);
 router.get('/orders/all', ctrl.getAllOrders);
+router.get('/orders/open', ctrl.getOpenOrders);
 router.get('/orders/:id', ctrl.getOrderById);
 router.patch('/orders/:id', ctrl.updateOrder);
 router.delete('/orders/:id', ctrl.deleteOrder);

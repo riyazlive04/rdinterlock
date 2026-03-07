@@ -41,11 +41,17 @@ export class DispatchService {
           paymentStatus: data.paymentStatus,
           totalAmount: data.totalAmount ?? 0,
           paidAmount: data.paidAmount ?? 0,
+          status: data.status,
+          location: data.location,
+          driverId: data.driverId,
+          vehicleNumber: data.vehicleNumber,
           notes: data.notes,
+          orderId: data.orderId,
         },
         include: {
           customer: true,
           brickType: true,
+          driver: true,
         },
       });
 
@@ -62,7 +68,37 @@ export class DispatchService {
         });
       }
 
+      // Update Order Status if linked
+      if (data.orderId) {
+        await this.updateOrderStatus(data.orderId, tx);
+      }
+
       return dispatch;
+    });
+  }
+
+  async updateOrderStatus(orderId: string, tx: any = prisma) {
+    const order = await tx.clientOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        dispatches: true,
+      },
+    });
+
+    if (!order) return;
+
+    const totalDispatched = order.dispatches.reduce((sum: number, d: any) => sum + d.quantity, 0);
+
+    let newStatus = 'PENDING';
+    if (totalDispatched >= order.quantity) {
+      newStatus = 'COMPLETED';
+    } else if (totalDispatched > 0) {
+      newStatus = 'IN_DISPATCH';
+    }
+
+    await tx.clientOrder.update({
+      where: { id: orderId },
+      data: { status: newStatus },
     });
   }
 
@@ -71,34 +107,26 @@ export class DispatchService {
     endDate?: string,
     customerId?: string,
     brickTypeId?: string,
-    paymentStatus?: string
+    paymentStatus?: string,
+    status?: string
   ) {
     const where: any = {};
-
-    if (startDate && endDate) {
-      where.date = {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
-      };
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate);
+      if (endDate) where.date.lte = new Date(endDate);
     }
-
-    if (customerId) {
-      where.customerId = customerId;
-    }
-
-    if (brickTypeId) {
-      where.brickTypeId = brickTypeId;
-    }
-
-    if (paymentStatus) {
-      where.paymentStatus = paymentStatus;
-    }
+    if (customerId) where.customerId = customerId;
+    if (brickTypeId) where.brickTypeId = brickTypeId;
+    if (paymentStatus) where.paymentStatus = paymentStatus;
+    if (status) where.status = status;
 
     const dispatches = await prisma.dispatch.findMany({
       where,
       include: {
         customer: true,
         brickType: true,
+        driver: true,
       },
       orderBy: { date: 'desc' },
     });
@@ -112,6 +140,7 @@ export class DispatchService {
       include: {
         customer: true,
         brickType: true,
+        driver: true,
       },
     });
 
@@ -138,6 +167,7 @@ export class DispatchService {
         include: {
           customer: true,
           brickType: true,
+          driver: true,
         },
       });
 
@@ -162,6 +192,13 @@ export class DispatchService {
             category: 'SALES',
           } as any,
         });
+      }
+
+      // Update Order Status if linked
+      if (updated.orderId) {
+        await this.updateOrderStatus(updated.orderId, tx);
+      } else if (dispatch.orderId) { // If it WAS linked but no longer is (though unlikely in current UI)
+        await this.updateOrderStatus(dispatch.orderId, tx);
       }
 
       return updated;

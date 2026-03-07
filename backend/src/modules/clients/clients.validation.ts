@@ -67,9 +67,10 @@ export const createScheduleSchema = z.object({
     quantity: z.number().int().positive(),
     location: z.string().optional(),
     dispatchDate: z.string(),
-    driverId: z.string().uuid().optional(),
+    driverId: z.string().uuid().optional().nullable(),
     status: z.string().optional(),
     notes: z.string().optional(),
+    orderId: z.string().uuid().optional().nullable(),
 });
 
 export const updateScheduleSchema = z.object({
@@ -78,7 +79,8 @@ export const updateScheduleSchema = z.object({
     quantity: z.number().int().positive().optional(),
     location: z.string().optional(),
     dispatchDate: z.string().optional(),
-    driverId: z.string().uuid().optional(),
+    driverId: z.string().uuid().optional().nullable(),
     status: z.string().optional(),
     notes: z.string().optional(),
+    orderId: z.string().uuid().optional().nullable(),
 });

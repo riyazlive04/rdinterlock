@@ -16,13 +16,23 @@ export const createDispatchSchema = z.object({
   }),
   totalAmount: z.number().positive('Total amount must be positive').optional(),
   paidAmount: z.number().min(0, 'Paid amount cannot be negative').default(0),
+  status: z.string().default('Completed'),
+  location: z.string().optional(),
+  driverId: z.string().uuid().optional().nullable(),
+  vehicleNumber: z.string().optional(),
   notes: z.string().optional(),
+  orderId: z.string().uuid().optional().nullable(),
 });
 
 export const updateDispatchSchema = z.object({
   paymentStatus: z.enum(['PAID', 'PENDING', 'PARTIAL']).optional(),
   paidAmount: z.number().min(0).optional(),
+  status: z.string().optional(),
+  location: z.string().optional(),
+  driverId: z.string().uuid().optional().nullable(),
+  vehicleNumber: z.string().optional(),
   notes: z.string().optional(),
+  orderId: z.string().uuid().optional().nullable(),
 });
 
 export const createCustomerSchema = z.object({

@@ -45,6 +45,7 @@ const clientLoungeItems = [
   { title: "Clients", url: "/clients", icon: UserCircle },
   { title: "Client Orders", url: "/client-orders", icon: ShoppingCart },
   { title: "Dispatch Schedule", url: "/dispatch-scheduling", icon: CalendarClock },
+  { title: "Client History", url: "/client-history", icon: Truck },
   { title: "Client Ledger", url: "/client-ledger", icon: CreditCard },
 ];
 

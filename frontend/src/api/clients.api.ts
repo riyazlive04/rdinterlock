@@ -37,6 +37,10 @@ export const clientsApi = {
         const res = await apiClient.get('/clients/orders/all', { params });
         return (res as any).data;
     },
+    getOpenOrders: async () => {
+        const res = await apiClient.get('/clients/orders/open');
+        return (res as any).data;
+    },
     getOrder: async (id: string) => {
         const res = await apiClient.get(`/clients/orders/${id}`);
         return (res as any).data;

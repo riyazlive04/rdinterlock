@@ -128,6 +128,16 @@ export class ClientsService {
         });
     }
 
+    async getOpenOrders() {
+        return prisma.clientOrder.findMany({
+            where: {
+                status: { not: 'COMPLETED' }
+            },
+            include: { client: true, brickType: true, dispatches: true },
+            orderBy: { orderDate: 'desc' },
+        });
+    }
+
     async getOrderById(id: string) {
         const order = await prisma.clientOrder.findUnique({
             where: { id },
@@ -324,7 +334,6 @@ export class ClientsService {
     }
 
     // ═══════════════════════ DISPATCH SCHEDULING ═══════════════════════
-
     async createSchedule(data: any) {
         return prisma.dispatchSchedule.create({
             data: {
@@ -336,8 +345,9 @@ export class ClientsService {
                 driverId: data.driverId || null,
                 status: data.status || 'SCHEDULED',
                 notes: data.notes,
+                orderId: data.orderId || null,
             },
-            include: { client: true, brickType: true, driver: true },
+            include: { client: true, brickType: true, driver: true, order: true },
         });
     }
 
@@ -346,20 +356,73 @@ export class ClientsService {
         if (filters?.status) where.status = filters.status;
         return prisma.dispatchSchedule.findMany({
             where,
-            include: { client: true, brickType: true, driver: true },
+            include: { client: true, brickType: true, driver: true, order: true },
             orderBy: { dispatchDate: 'asc' },
         });
     }
 
     async updateSchedule(id: string, data: any) {
-        const schedule = await prisma.dispatchSchedule.findUnique({ where: { id } });
+        const schedule = await prisma.dispatchSchedule.findUnique({
+            where: { id },
+            include: { client: true, brickType: true, driver: true }
+        });
         if (!schedule) throw new AppError('Schedule not found', 404);
+
         const updateData: any = { ...data };
         if (data.dispatchDate) updateData.dispatchDate = new Date(data.dispatchDate);
+
+        // If status is being updated to COMPLETED, create a final Dispatch entry
+        if (data.status === 'COMPLETED' || data.status === 'Completed') {
+            return await prisma.$transaction(async (tx) => {
+                // 1. Create the final Dispatch record
+                const dispatch = await tx.dispatch.create({
+                    data: {
+                        date: schedule.dispatchDate,
+                        customerId: schedule.clientId,
+                        brickTypeId: schedule.brickTypeId,
+                        quantity: schedule.quantity,
+                        location: schedule.location,
+                        driverId: schedule.driverId,
+                        status: 'Completed',
+                        paymentStatus: 'PENDING',
+                        totalAmount: 0,
+                        paidAmount: 0,
+                        vehicleType: 'OWN',
+                        notes: schedule.notes,
+                        orderId: schedule.orderId,
+                    }
+                });
+
+                // 2. Delete the schedule
+                await tx.dispatchSchedule.delete({ where: { id } });
+
+                // 3. Update Order Status if linked
+                if (schedule.orderId) {
+                    const order = await tx.clientOrder.findUnique({
+                        where: { id: schedule.orderId },
+                        include: { dispatches: true },
+                    });
+                    if (order) {
+                        const totalDispatched = order.dispatches.reduce((sum: number, d: any) => sum + d.quantity, 0);
+                        let newStatus = 'PENDING';
+                        if (totalDispatched >= order.quantity) newStatus = 'COMPLETED';
+                        else if (totalDispatched > 0) newStatus = 'IN_DISPATCH';
+
+                        await tx.clientOrder.update({
+                            where: { id: schedule.orderId },
+                            data: { status: newStatus },
+                        });
+                    }
+                }
+
+                return dispatch;
+            });
+        }
+
         return prisma.dispatchSchedule.update({
             where: { id },
             data: updateData,
-            include: { client: true, brickType: true, driver: true },
+            include: { client: true, brickType: true, driver: true, order: true },
         });
     }
 
@@ -378,9 +441,9 @@ export class ClientsService {
         return prisma.dispatchSchedule.findMany({
             where: {
                 dispatchDate: { lte: threeDaysLater },
-                status: { not: 'DISPATCHED' },
+                status: { notIn: ['DISPATCHED', 'COMPLETED', 'Completed'] },
             },
-            include: { client: true, brickType: true, driver: true },
+            include: { client: true, brickType: true, driver: true, order: true },
             orderBy: { dispatchDate: 'asc' },
         });
     }

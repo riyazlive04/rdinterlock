@@ -15,7 +15,6 @@ import type { Worker } from "@/types/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface AttendanceState { [workerId: string]: boolean }
-interface AdvanceState { [workerId: string]: { enabled: boolean; amount: string } }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 const AttendancePage = () => {
@@ -27,9 +26,6 @@ const AttendancePage = () => {
     const [staffAttendance, setStaffAttendance] = useState<AttendanceState>({});
     const [workerAttendance, setWorkerAttendance] = useState<AttendanceState>({});
 
-    // Advances: Driver + all weekly workers
-    const [staffAdvances, setStaffAdvances] = useState<AdvanceState>({});
-    const [workerAdvances, setWorkerAdvances] = useState<AdvanceState>({});
 
     // ─── Queries ──────────────────────────────────────────────────────────────
     const { data: allWorkers = [], isLoading } = useQuery({
@@ -88,34 +84,12 @@ const AttendancePage = () => {
 
             await apiClient.post("/wages/attendance/bulk", { records: attendanceRecords });
 
-            // 2. Advances
-            const staffAdvRecs = Object.entries(staffAdvances)
-                .filter(([, d]) => d.enabled && parseFloat(d.amount) > 0)
-                .map(([workerId, d]) => ({
-                    workerId,
-                    amount: parseFloat(d.amount),
-                    note: `Advance on ${format(date, "PP")}`,
-                }));
-
-            const workerAdvRecs = Object.entries(workerAdvances)
-                .filter(([, d]) => d.enabled && parseFloat(d.amount) > 0)
-                .map(([workerId, d]) => ({
-                    workerId,
-                    amount: parseFloat(d.amount),
-                    note: `Advance on ${format(date, "PP")}`,
-                }));
-
-            const allAdvances = [...staffAdvRecs, ...workerAdvRecs];
-            if (allAdvances.length > 0) {
-                await apiClient.post("/wages/advances/bulk", { records: allAdvances });
-            }
+            await apiClient.post("/wages/attendance/bulk", { records: attendanceRecords });
         },
         onSuccess: () => {
-            toast.success("✅ Attendance & advances saved");
+            toast.success("✅ Attendance saved");
             queryClient.invalidateQueries({ queryKey: ["attendance"] });
             queryClient.invalidateQueries({ queryKey: ["workers"] });
-            setStaffAdvances({});
-            setWorkerAdvances({});
             setNotes("");
         },
         onError: (err: any) => {
@@ -129,15 +103,6 @@ const AttendancePage = () => {
     const toggleWorker = (id: string) =>
         setWorkerAttendance(p => ({ ...p, [id]: !p[id] }));
 
-    const toggleStaffAdv = (id: string, enabled: boolean) =>
-        setStaffAdvances(p => ({ ...p, [id]: { ...(p[id] || { amount: "" }), enabled } }));
-    const updateStaffAdv = (id: string, amount: string) =>
-        setStaffAdvances(p => ({ ...p, [id]: { ...(p[id] || { enabled: true }), amount } }));
-
-    const toggleWorkerAdv = (id: string, enabled: boolean) =>
-        setWorkerAdvances(p => ({ ...p, [id]: { ...(p[id] || { amount: "" }), enabled } }));
-    const updateWorkerAdv = (id: string, amount: string) =>
-        setWorkerAdvances(p => ({ ...p, [id]: { ...(p[id] || { enabled: true }), amount } }));
 
     const roleColor: Record<string, string> = {
         DRIVER: "success",
@@ -175,15 +140,13 @@ const AttendancePage = () => {
                         ) : (
                             staffWorkers.map(w => {
                                 const isPresent = staffAttendance[w.id] || false;
-                                const isDriver = w.role === "DRIVER";
-                                const advData = staffAdvances[w.id];
 
                                 return (
                                     <div
                                         key={w.id}
                                         className={`rounded-2xl border p-4 transition-all ${isPresent
-                                                ? "border-primary/30 bg-primary/5"
-                                                : "border-border bg-secondary/20"
+                                            ? "border-primary/30 bg-primary/5"
+                                            : "border-border bg-secondary/20"
                                             }`}
                                     >
                                         {/* Header row */}
@@ -233,38 +196,6 @@ const AttendancePage = () => {
                                             </div>
                                         </div>
 
-                                        {/* Advance — Driver only */}
-                                        {isDriver && (
-                                            <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-4">
-                                                <div
-                                                    className="flex items-center gap-2 cursor-pointer"
-                                                    onClick={() => toggleStaffAdv(w.id, !(advData?.enabled))}
-                                                >
-                                                    <Checkbox
-                                                        checked={advData?.enabled || false}
-                                                        onCheckedChange={checked => toggleStaffAdv(w.id, checked === true)}
-                                                        className="h-4 w-4"
-                                                    />
-                                                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 cursor-pointer">
-                                                        <Banknote className="h-3 w-3" /> Give Advance
-                                                    </label>
-                                                </div>
-                                                {advData?.enabled && (
-                                                    <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
-                                                        <span className="text-xs font-bold text-muted-foreground">₹</span>
-                                                        <input
-                                                            type="number"
-                                                            inputMode="numeric"
-                                                            placeholder="0"
-                                                            value={advData.amount}
-                                                            onChange={e => updateStaffAdv(w.id, e.target.value)}
-                                                            autoFocus
-                                                            className="w-24 h-9 px-3 bg-background border border-border rounded-lg text-xs font-bold focus:border-primary focus:outline-none"
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
                                 );
                             })
@@ -291,7 +222,6 @@ const AttendancePage = () => {
                         ) : (
                             weeklyWorkers.map(w => {
                                 const isPresent = workerAttendance[w.id] || false;
-                                const advData = workerAdvances[w.id];
                                 const isMason = w.role === "MASON";
 
                                 return (
@@ -349,36 +279,6 @@ const AttendancePage = () => {
                                             </div>
                                         </div>
 
-                                        {/* Advance — all weekly workers */}
-                                        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-4">
-                                            <div
-                                                className="flex items-center gap-2 cursor-pointer"
-                                                onClick={() => toggleWorkerAdv(w.id, !(advData?.enabled))}
-                                            >
-                                                <Checkbox
-                                                    checked={advData?.enabled || false}
-                                                    onCheckedChange={checked => toggleWorkerAdv(w.id, checked === true)}
-                                                    className="h-4 w-4"
-                                                />
-                                                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 cursor-pointer">
-                                                    <Banknote className="h-3 w-3" /> Give Advance
-                                                </label>
-                                            </div>
-                                            {advData?.enabled && (
-                                                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
-                                                    <span className="text-xs font-bold text-muted-foreground">₹</span>
-                                                    <input
-                                                        type="number"
-                                                        inputMode="numeric"
-                                                        placeholder="0"
-                                                        value={advData.amount}
-                                                        onChange={e => updateWorkerAdv(w.id, e.target.value)}
-                                                        autoFocus
-                                                        className="w-24 h-9 px-3 bg-background border border-border rounded-lg text-xs font-bold focus:border-primary focus:outline-none"
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
                                     </div>
                                 );
                             })
@@ -405,7 +305,7 @@ const AttendancePage = () => {
                 {/* Save Button */}
                 <div className="sticky bottom-20 z-10 pt-2">
                     <ActionButton
-                        label={saveMutation.isPending ? "Saving..." : "Save Attendance & Advances"}
+                        label={saveMutation.isPending ? "Saving..." : "Save Attendance"}
                         icon={saveMutation.isPending ? Loader2 : Save}
                         variant="primary"
                         size="lg"

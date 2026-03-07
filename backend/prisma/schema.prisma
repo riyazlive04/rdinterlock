@@ -51,8 +51,12 @@ model Worker {
   id                 String              @id @default(uuid())
   name               String
   role               String
+  employeeType       String              @default("Worker") // Staff or Worker
   paymentType        String
-  rate               Float
+  rate               Float               @default(0) // Legacy field (optional, keeping for compatibility)
+  monthlySalary      Float               @default(0)
+  weeklyWage         Float               @default(0)
+  perBrickRate       Float               @default(0)
   isActive           Boolean             @default(true)
   advanceBalance     Float               @default(0)
   createdAt          DateTime            @default(now())
@@ -66,6 +70,7 @@ model Worker {
   settlements        WeeklySettlement[]
   advances           WorkerAdvance[]
   cashEntries        CashEntry[]
+  dispatches         Dispatch[]          @relation("DriverDispatches")
 
   @@map("workers")
 }
@@ -135,6 +140,8 @@ model ClientOrder {
   brickType            BrickType       @relation("OrderBrickType", fields: [brickTypeId], references: [id])
   client               Customer        @relation(fields: [clientId], references: [id])
   payments             ClientPayment[]
+  dispatches         Dispatch[]
+  dispatchSchedules  DispatchSchedule[]
 
   @@map("client_orders")
 }
@@ -171,6 +178,8 @@ model DispatchSchedule {
   brickType    BrickType @relation("ScheduleBrickType", fields: [brickTypeId], references: [id])
   client       Customer  @relation(fields: [clientId], references: [id])
   driver       Worker?   @relation(fields: [driverId], references: [id])
+  orderId      String?
+  order        ClientOrder? @relation(fields: [orderId], references: [id])
 
   @@map("dispatch_schedules")
 }
@@ -183,15 +192,23 @@ model Dispatch {
   quantity      Int
   distanceKm    Float?
   vehicleType   String
-  transportCost Float
-  loadingCost   Float
+  transportCost Float     @default(0)
+  loadingCost   Float     @default(0)
   paymentStatus String
-  totalAmount   Float
-  paidAmount    Float
+  totalAmount   Float     @default(0)
+  paidAmount    Float     @default(0)
+  status        String    @default("Completed") // Scheduled, Dispatched, Completed
+  location      String?
+  driverId      String?
+  vehicleNumber String?
+  notes         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   brickType     BrickType @relation(fields: [brickTypeId], references: [id])
   customer      Customer  @relation(fields: [customerId], references: [id])
+  driver        Worker?   @relation("DriverDispatches", fields: [driverId], references: [id])
+  orderId       String?
+  order         ClientOrder? @relation(fields: [orderId], references: [id])
 
   @@map("dispatches")
 }

@@ -42,8 +42,9 @@ export class SettingsController {
 
   deleteMachine = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await settingsService.deleteMachine(id);
-    sendSuccess(res, result, 'Machine deleted successfully');
+    const force = req.query.force === 'true';
+    const result = await settingsService.deleteMachine(id, force);
+    sendSuccess(res, result, force ? 'Machine deleted permanently' : 'Machine deleted successfully');
   });
 
   // Brick Type management
@@ -74,8 +75,9 @@ export class SettingsController {
 
   deleteBrickType = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await settingsService.deleteBrickType(id);
-    sendSuccess(res, result, 'Brick type deleted successfully');
+    const force = req.query.force === 'true';
+    const result = await settingsService.deleteBrickType(id, force);
+    sendSuccess(res, result, force ? 'Brick type deleted permanently' : 'Brick type deleted successfully');
   });
 
   // Raw Material management
@@ -94,8 +96,9 @@ export class SettingsController {
 
   deleteRawMaterial = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await settingsService.deleteRawMaterial(id);
-    sendSuccess(res, result, 'Raw material deleted successfully');
+    const force = req.query.force === 'true';
+    const result = await settingsService.deleteRawMaterial(id, force);
+    sendSuccess(res, result, force ? 'Raw material deleted permanently' : 'Raw material deleted successfully');
   });
 
   getFormMetadata = asyncHandler(async (_req: Request, res: Response) => {

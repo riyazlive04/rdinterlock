@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./recovery-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model attendance {
+  id       String   @id
+  workerId String
+  date     DateTime
+  present  Boolean  @default(true)
+  workers  workers  @relation(fields: [workerId], references: [id])
+
+  @@unique([workerId, date])
+}
+
+model brick_types {
+  id          String        @id
+  size        String        @unique
+  stock       Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  dispatches  dispatches[]
+  productions productions[]
+}
+
+model cash_entries {
+  id          String   @id
+  date        DateTime
+  type        String
+  amount      Float
+  description String
+  category    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+}
+
+model customers {
+  id         String       @id
+  name       String
+  phone      String?
+  address    String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime
+  dispatches dispatches[]
+}
+
+model daily_wages {
+  id          String   @id
+  workerId    String
+  date        DateTime
+  bricksMade  Int?
+  wageAmount  Float
+  advanceUsed Float    @default(0)
+  netPayable  Float
+  isPaid      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  workers     workers  @relation(fields: [workerId], references: [id])
+}
+
+model dispatches {
+  id            String      @id
+  date          DateTime
+  customerId    String
+  brickTypeId   String
+  quantity      Int
+  distanceKm    Float?
+  vehicleType   String
+  transportCost Float
+  loadingCost   Float
+  paymentStatus String
+  totalAmount   Float
+  paidAmount    Float
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime
+  brick_types   brick_types @relation(fields: [brickTypeId], references: [id])
+  customers     customers   @relation(fields: [customerId], references: [id])
+}
+
+model expenses {
+  id              String            @id
+  date            DateTime
+  category        String
+  amount          Float
+  notes           String?
+  paymentMode     String
+  workerId        String?
+  materialId      String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  raw_materials   raw_materials?    @relation(fields: [materialId], references: [id])
+  workers         workers?          @relation(fields: [workerId], references: [id])
+  material_usages material_usages[]
+}
+
+model machines {
+  id          String        @id
+  name        String        @unique
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  productions productions[]
+}
+
+model material_usages {
+  id            String        @id
+  materialId    String
+  quantity      Float
+  pricePerUnit  Float         @default(0)
+  totalCost     Float         @default(0)
+  date          DateTime
+  expenseId     String?
+  createdAt     DateTime      @default(now())
+  expenses      expenses?     @relation(fields: [expenseId], references: [id])
+  raw_materials raw_materials @relation(fields: [materialId], references: [id])
+}
+
+model production_workers {
+  id           String      @id
+  productionId String
+  workerId     String
+  quantity     Int
+  createdAt    DateTime    @default(now())
+  workers      workers     @relation(fields: [workerId], references: [id])
+  productions  productions @relation(fields: [productionId], references: [id])
+}
+
+model productions {
+  id                 String               @id
+  date               DateTime
+  machineId          String
+  shift              String
+  brickTypeId        String
+  quantity           Int
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  production_workers production_workers[]
+  brick_types        brick_types          @relation(fields: [brickTypeId], references: [id])
+  machines           machines             @relation(fields: [machineId], references: [id])
+}
+
+model raw_materials {
+  id              String            @id
+  name            String            @unique
+  unit            String
+  description     String?
+  stock           Float             @default(0)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  expenses        expenses[]
+  material_usages material_usages[]
+}
+
+model users {
+  id        String   @id
+  name      String
+  email     String   @unique
+  password  String
+  role      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model weekly_settlements {
+  id            String   @id
+  workerId      String
+  startDate     DateTime
+  endDate       DateTime
+  totalAmount   Float
+  paymentStatus String
+  generatedAt   DateTime @default(now())
+  notes         String?
+  workers       workers  @relation(fields: [workerId], references: [id])
+}
+
+model worker_advances {
+  id       String   @id
+  workerId String
+  amount   Float
+  type     String
+  date     DateTime
+  note     String?
+  workers  workers  @relation(fields: [workerId], references: [id])
+}
+
+model workers {
+  id                 String               @id
+  name               String
+  role               String
+  paymentType        String
+  rate               Float
+  isActive           Boolean              @default(true)
+  advanceBalance     Float                @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  attendance         attendance[]
+  daily_wages        daily_wages[]
+  expenses           expenses[]
+  production_workers production_workers[]
+  weekly_settlements weekly_settlements[]
+  worker_advances    worker_advances[]
+}

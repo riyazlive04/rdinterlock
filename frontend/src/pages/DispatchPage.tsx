@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Save, Truck, Plus, CalendarClock, AlertTriangle, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dispatchApi, customersApi } from "@/api/dispatch.api";
+import { workersApi } from "@/api/workers.api";
 import { stockApi } from "@/api/stock.api";
 import { settingsApi } from "@/api/settings.api";
 import {
@@ -29,6 +30,9 @@ const DispatchPage = () => {
   const [totalAmount, setTotalAmount] = useState("");
   const [paymentStatus, setPaymentStatus] = useState<"PENDING" | "PAID" | "PARTIAL">("PENDING");
   const [paidAmount, setPaidAmount] = useState("");
+  const [driverId, setDriverId] = useState("");
+  const [location, setLocation] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
 
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
@@ -47,6 +51,13 @@ const DispatchPage = () => {
     queryKey: ["dispatches"],
     queryFn: () => dispatchApi.getAll(),
   });
+
+  const { data: allWorkers = [] } = useQuery({
+    queryKey: ["workers"],
+    queryFn: () => workersApi.getAll(true),
+  });
+
+  const drivers = allWorkers.filter((w: any) => w.role === "DRIVER");
 
   const { data: metaData } = useQuery({
     queryKey: ["form-metadata"],
@@ -72,6 +83,9 @@ const DispatchPage = () => {
       setPaidAmount("");
       setTotalAmount("");
       setPaymentStatus("PENDING");
+      setDriverId("");
+      setLocation("");
+      setVehicleNumber("");
     },
     onError: () => toast.error("❌ Failed to save order"),
   });
@@ -107,6 +121,10 @@ const DispatchPage = () => {
       transportCost: 0,
       loadingCost: 0,
       distanceKm: 0,
+      driverId: driverId || undefined,
+      location: location || undefined,
+      vehicleNumber: vehicleNumber || undefined,
+      status: "Completed",
     });
   };
 
@@ -260,6 +278,36 @@ const DispatchPage = () => {
           </FormField>
 
           <DatePickerField label="Dispatch Date" date={orderDate} onDateChange={setOrderDate} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Driver">
+              <select
+                value={driverId}
+                onChange={(e) => setDriverId(e.target.value)}
+                className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
+              >
+                <option value="">Select Driver...</option>
+                {drivers.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Vehicle Number">
+              <input
+                value={vehicleNumber}
+                onChange={(e) => setVehicleNumber(e.target.value)}
+                placeholder="TRUCK-001"
+                className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Delivery Location">
+            <input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Village, City, landmarks..."
+              className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none"
+            />
+          </FormField>
 
           <FormField label="Payment Status">
             <div className="grid grid-cols-3 gap-2">

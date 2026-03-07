@@ -37,8 +37,12 @@ export interface Worker {
   id: string;
   name: string;
   role: string;
-  paymentType: 'DAILY' | 'PER_BRICK' | 'MONTHLY';
-  rate: number;
+  employeeType: 'Staff' | 'Worker';
+  paymentType: 'DAILY' | 'PER_BRICK' | 'MONTHLY'; // Keeping legacy strings for now
+  rate: number; // Legacy field
+  monthlySalary: number;
+  weeklyWage: number;
+  perBrickRate: number;
   advanceBalance: number;
   isActive: boolean;
   createdAt: string;
@@ -48,8 +52,12 @@ export interface Worker {
 export interface CreateWorkerRequest {
   name: string;
   role: string;
-  paymentType: 'DAILY' | 'PER_BRICK' | 'MONTHLY';
-  rate: number;
+  employeeType?: 'Staff' | 'Worker';
+  paymentType: string;
+  monthlySalary?: number;
+  weeklyWage?: number;
+  perBrickRate?: number;
+  rate?: number;
 }
 
 // Machine & Brick Type

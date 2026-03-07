@@ -4,7 +4,6 @@ import { EntryCard } from "@/components/EntryCard";
 import { ActionButton } from "@/components/ActionButton";
 import { DatePickerField } from "@/components/DatePickerField";
 import { PillSelector } from "@/components/PillSelector";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Save, Plus, X, Fuel, UtensilsCrossed, PackageOpen, MoreHorizontal, Eye, Loader2, Receipt, Check } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +13,7 @@ import { productionApi } from "@/api/production.api";
 import { expensesApi } from "@/api/expenses.api";
 import { format } from "date-fns";
 
-const quickQuantities = [500, 800, 1000, 1500, 2000];
+const quickQuantities = [500, 800, 1000, 2000];
 
 const DailyEntry = () => {
   const queryClient = useQueryClient();
@@ -25,8 +24,6 @@ const DailyEntry = () => {
   const [quantity, setQuantity] = useState("");
   const [damagedQuantity, setDamagedQuantity] = useState("");
   const [workers, setWorkers] = useState<string[]>([""]);
-  const [sameProduction, setSameProduction] = useState(true);
-  const [workerQuantities, setWorkerQuantities] = useState<Record<number, string>>({});
   const [notes, setNotes] = useState("");
 
   const [expenseDate, setExpenseDate] = useState(new Date());
@@ -68,8 +65,8 @@ const DailyEntry = () => {
       queryClient.invalidateQueries({ queryKey: ['productions'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
       setQuantity("");
+      setDamagedQuantity("");
       setWorkers([""]);
-      setWorkerQuantities({});
       setNotes("");
     },
     onError: (error: any) => {
@@ -113,22 +110,14 @@ const DailyEntry = () => {
   const addWorker = () => setWorkers([...workers, ""]);
   const removeWorker = (i: number) => {
     setWorkers(workers.filter((_, idx) => idx !== i));
-    const newQty = { ...workerQuantities };
-    delete newQty[i];
-    setWorkerQuantities(newQty);
   };
   const updateWorker = (i: number, v: string) => {
     const updated = [...workers];
     updated[i] = v;
     setWorkers(updated);
   };
-  const updateWorkerQty = (i: number, v: string) => {
-    setWorkerQuantities({ ...workerQuantities, [i]: v });
-  };
-
   const calcTotal = () => {
-    if (sameProduction) return parseInt(quantity) || 0;
-    return Object.values(workerQuantities).reduce((sum, q) => sum + (parseInt(q) || 0), 0);
+    return parseInt(quantity) || 0;
   };
 
   const calcAvailable = () => {
@@ -142,7 +131,11 @@ const DailyEntry = () => {
     const damagedQty = parseInt(damagedQuantity) || 0;
 
     if (totalQty <= 0) {
-      toast.error("Please enter a valid quantity");
+      toast.error("Please enter a valid quantity of bricks produced");
+      return;
+    }
+    if (damagedQty < 0) {
+      toast.error("Damaged bricks cannot be negative");
       return;
     }
     if (damagedQty > totalQty) {
@@ -166,7 +159,7 @@ const DailyEntry = () => {
         .filter(w => w !== "")
         .map((workerId, index) => ({
           workerId,
-          quantity: sameProduction ? Math.floor(totalQty / workers.filter(w => w !== "").length) : parseInt(workerQuantities[index]) || 0,
+          quantity: Math.floor(totalQty / workers.filter(w => w !== "").length),
         })),
     };
 
@@ -258,10 +251,24 @@ const DailyEntry = () => {
 
           <FormField label="Quantity Produced" required>
             <BigNumberInput
-              value={sameProduction ? quantity : calcTotal().toString()}
-              onChange={sameProduction ? setQuantity : () => { }}
+              value={quantity}
+              onChange={setQuantity}
               placeholder="Enter number of bricks"
+              min={0}
             />
+            {/* Quick Quantity Chips */}
+            <div className="flex flex-wrap gap-2 mt-3">
+              {quickQuantities.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setQuantity(q.toString())}
+                  className="px-4 h-9 rounded-full border border-border bg-card text-foreground text-xs font-semibold hover:border-primary/40 hover:bg-primary/4 transition-all active:scale-95 touch-target"
+                >
+                  {q.toLocaleString()}
+                </button>
+              ))}
+            </div>
           </FormField>
 
           <FormField label="Damaged Bricks">
@@ -269,6 +276,7 @@ const DailyEntry = () => {
               value={damagedQuantity}
               onChange={setDamagedQuantity}
               placeholder="Enter number of damaged bricks"
+              min={0}
             />
           </FormField>
 
@@ -291,31 +299,7 @@ const DailyEntry = () => {
             )}
           </div>
 
-          {/* Quick Quantity Chips */}
-          <div className="flex flex-wrap gap-2">
-            {quickQuantities.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => sameProduction && setQuantity(q.toString())}
-                className="px-4 h-9 rounded-full border border-border bg-card text-foreground text-xs font-semibold hover:border-primary/40 hover:bg-primary/4 transition-all active:scale-95 touch-target"
-              >
-                {q.toLocaleString()}
-              </button>
-            ))}
-          </div>
 
-          {/* Worker Production Mode */}
-          <div className="flex items-center gap-2.5 p-3 bg-secondary/50 rounded-xl">
-            <Checkbox
-              id="same-production"
-              checked={sameProduction}
-              onCheckedChange={(checked) => setSameProduction(checked === true)}
-            />
-            <label htmlFor="same-production" className="text-sm font-medium text-foreground cursor-pointer">
-              Same production for all workers
-            </label>
-          </div>
 
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -336,16 +320,6 @@ const DailyEntry = () => {
                     <option value="">{isMetaLoading ? "Loading workers..." : "Select worker..."}</option>
                     {workerList.map((worker) => <option key={worker.id} value={worker.id}>{worker.name}</option>)}
                   </select>
-                  {!sameProduction && (
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={workerQuantities[i] || ""}
-                      onChange={(e) => updateWorkerQty(i, e.target.value)}
-                      placeholder="Qty"
-                      className="w-24 h-12 px-2 bg-secondary/50 border border-border rounded-xl text-foreground text-sm text-center focus:border-primary focus:outline-none transition-colors"
-                    />
-                  )}
                   {workers.length > 1 && (
                     <button onClick={() => removeWorker(i)} className="text-muted-foreground hover:text-destructive touch-target px-2 transition-colors">
                       <X className="h-5 w-5" />

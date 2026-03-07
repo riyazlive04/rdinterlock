@@ -57,6 +57,11 @@ export class ClientsController {
         sendSuccess(res, orders, 'Orders retrieved');
     });
 
+    getOpenOrders = asyncHandler(async (req: Request, res: Response) => {
+        const orders = await svc.getOpenOrders();
+        sendSuccess(res, orders, 'Open orders retrieved');
+    });
+
     getOrderById = asyncHandler(async (req: Request, res: Response) => {
         const order = await svc.getOrderById(req.params.id);
         sendSuccess(res, order, 'Order retrieved');

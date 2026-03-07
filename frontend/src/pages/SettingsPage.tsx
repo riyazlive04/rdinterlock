@@ -9,16 +9,43 @@ import { settingsApi } from "@/api/settings.api";
 import { workersApi } from "@/api/workers.api";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 const SettingsPage = () => {
   const queryClient = useQueryClient();
   const [expenseCategories, setExpenseCategories] = useState(["Fuel", "Food", "Material", "Other"]);
+
+  // Confirm Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: "",
+    description: "",
+    onConfirm: () => { },
+    variant: "destructive" as "default" | "destructive"
+  });
+
+  const triggerConfirm = (config: { title: string; description: string; onConfirm: () => void; variant?: "default" | "destructive" }) => {
+    setConfirmModal({
+      isOpen: true,
+      title: config.title,
+      description: config.description,
+      onConfirm: config.onConfirm,
+      variant: config.variant || "destructive"
+    });
+  };
 
   const [newMachine, setNewMachine] = useState("");
   const [newBrickType, setNewBrickType] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [newRawMaterial, setNewRawMaterial] = useState("");
   const [newRawMaterialUnit, setNewRawMaterialUnit] = useState("KG");
+
+  // Show inactive filters
+  const [showInactiveMachines, setShowInactiveMachines] = useState(false);
+  const [showInactiveBrickTypes, setShowInactiveBrickTypes] = useState(false);
+  const [showInactiveRawMaterials, setShowInactiveRawMaterials] = useState(false);
+  const [showInactiveStaff, setShowInactiveStaff] = useState(false);
+  const [showInactiveWorkers, setShowInactiveWorkers] = useState(false);
 
   // Staff & Worker input state
   const [newStaffName, setNewStaffName] = useState("");
@@ -27,6 +54,15 @@ const SettingsPage = () => {
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerRole, setNewWorkerRole] = useState("OPERATOR");
   const [newWorkerPayment, setNewWorkerPayment] = useState("PER_BRICK");
+
+  // Track edited changes for staff/workers in salary rates section
+  const [editedWorkerRates, setEditedWorkerRates] = useState<Record<string, string>>({});
+  const [editedWorkerStatus, setEditedWorkerStatus] = useState<Record<string, boolean>>({});
+
+  // Form states
+  const [newStaffSalary, setNewStaffSalary] = useState<number>(0);
+  const [newWorkerWeeklyWage, setNewWorkerWeeklyWage] = useState<number>(0);
+  const [newWorkerPerBrickRate, setNewWorkerPerBrickRate] = useState<number>(0);
 
   // --- Queries ---
   const { data: machines = [], isLoading: isMachinesLoading } = useQuery({
@@ -44,17 +80,14 @@ const SettingsPage = () => {
     queryFn: () => settingsApi.getRawMaterials(false),
   });
 
-  // Staff = MONTHLY payment workers (MANAGER, DRIVER, TELECALLER)
+  // Staff = employeeType 'Staff'
   const { data: allWorkersForSettings = [], isLoading: isStaffWorkersLoading } = useQuery({
     queryKey: ['workers-settings'],
     queryFn: () => workersApi.getAll(false), // activeOnly=false so we see all
   });
-  const staffList = allWorkersForSettings.filter(w =>
-    ['MANAGER', 'DRIVER', 'TELECALLER'].includes(w.role) && w.isActive
-  );
-  const workerList = allWorkersForSettings.filter(w =>
-    !['MANAGER', 'DRIVER', 'TELECALLER'].includes(w.role) && w.isActive
-  );
+
+  const staffList = allWorkersForSettings.filter(w => w.employeeType === 'Staff');
+  const workerList = allWorkersForSettings.filter(w => w.employeeType === 'Worker');
 
   const { data: remoteSettings } = useQuery({
     queryKey: ['system-settings'],
@@ -93,11 +126,11 @@ const SettingsPage = () => {
   });
 
   const removeMachineMutation = useMutation({
-    mutationFn: settingsApi.deleteMachine,
-    onSuccess: () => {
+    mutationFn: ({ id, force }: { id: string, force?: boolean }) => settingsApi.deleteMachine(id, force),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['machines'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
-      toast.success("✅ Machine removed");
+      toast.success(variables.force ? "🗑️ Machine permanently deleted" : "✅ Machine removed");
     }
   });
 
@@ -112,11 +145,11 @@ const SettingsPage = () => {
   });
 
   const removeBrickTypeMutation = useMutation({
-    mutationFn: settingsApi.deleteBrickType,
-    onSuccess: () => {
+    mutationFn: ({ id, force }: { id: string, force?: boolean }) => settingsApi.deleteBrickType(id, force),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['brick-types'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
-      toast.success("✅ Brick type removed");
+      toast.success(variables.force ? "🗑️ Brick type permanently deleted" : "✅ Brick type removed");
     }
   });
 
@@ -131,11 +164,11 @@ const SettingsPage = () => {
   });
 
   const removeRawMaterialMutation = useMutation({
-    mutationFn: settingsApi.deleteRawMaterial,
-    onSuccess: () => {
+    mutationFn: ({ id, force }: { id: string, force?: boolean }) => settingsApi.deleteRawMaterial(id, force),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['raw-materials-settings'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
-      toast.success("✅ Material removed");
+      toast.success(variables.force ? "🗑️ Material permanently deleted" : "✅ Material removed");
     }
   });
 
@@ -153,58 +186,66 @@ const SettingsPage = () => {
 
   // --- Staff / Worker Mutations ---
   const addStaffMutation = useMutation({
-    mutationFn: (data: { name: string; role: string; paymentType: string }) =>
+    mutationFn: (data: { name: string; role: string; monthlySalary: number }) =>
       workersApi.create({
         name: data.name,
         role: data.role,
-        paymentType: data.paymentType as any,
-        rate: getDefaultRate(data.role, data.paymentType),
+        employeeType: 'Staff',
+        paymentType: 'MONTHLY',
+        monthlySalary: data.monthlySalary,
+        rate: data.monthlySalary, // Legacy fallback
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workers-settings'] });
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
       setNewStaffName("");
-      toast.success("✅ Staff added — now visible in Attendance & Reports");
+      setNewStaffSalary(0);
+      toast.success("✅ Staff member added");
     },
     onError: (e: any) => toast.error("❌ Failed to add staff", { description: e.message }),
   });
 
   const removeStaffMutation = useMutation({
-    mutationFn: (id: string) => workersApi.delete(id),
-    onSuccess: () => {
+    mutationFn: ({ id, force }: { id: string, force?: boolean }) => workersApi.delete(id, force),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['workers-settings'] });
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
-      toast.success("✅ Staff removed");
+      toast.success(variables.force ? "🗑️ Staff permanently deleted" : "✅ Staff removed");
     },
   });
 
   const addWorkerMutation = useMutation({
-    mutationFn: (data: { name: string; role: string; paymentType: string }) =>
+    mutationFn: (data: { name: string; role: string; paymentType: string, perBrickRate: number, weeklyWage: number }) =>
       workersApi.create({
         name: data.name,
         role: data.role,
-        paymentType: data.paymentType as any,
-        rate: getDefaultRate(data.role, data.paymentType),
+        employeeType: 'Worker',
+        paymentType: data.paymentType,
+        perBrickRate: data.perBrickRate,
+        weeklyWage: data.weeklyWage,
+        rate: data.paymentType === 'PER_BRICK' ? data.perBrickRate : data.weeklyWage,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workers-settings'] });
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
       setNewWorkerName("");
-      toast.success("✅ Worker added — now visible in Attendance & Production");
+      setNewWorkerPerBrickRate(0);
+      setNewWorkerWeeklyWage(0);
+      toast.success("✅ Worker added — visible in Production & Attendance");
     },
     onError: (e: any) => toast.error("❌ Failed to add worker", { description: e.message }),
   });
 
   const removeWorkerMutation = useMutation({
-    mutationFn: (id: string) => workersApi.delete(id),
-    onSuccess: () => {
+    mutationFn: ({ id, force }: { id: string, force?: boolean }) => workersApi.delete(id, force),
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['workers-settings'] });
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       queryClient.invalidateQueries({ queryKey: ['form-metadata'] });
-      toast.success("✅ Worker removed");
+      toast.success(variables.force ? "🗑️ Worker permanently deleted" : "✅ Worker removed");
     },
   });
 
@@ -220,46 +261,111 @@ const SettingsPage = () => {
     setSalaryRates(prev => ({ ...prev, [key]: value }));
   };
 
-  const saveSalaryRates = () => {
-    updateSettingsMutation.mutate(salaryRates);
+  const saveSalaryRates = async () => {
+    try {
+      // 1. Save global system rates
+      await updateSettingsMutation.mutateAsync(salaryRates);
+
+      // 2. Save individual staff changes (Rate and Active status)
+      const allChangedIds = Array.from(new Set([
+        ...Object.keys(editedWorkerRates),
+        ...Object.keys(editedWorkerStatus)
+      ]));
+
+      const updates = allChangedIds.map(id => {
+        const updateData: any = {};
+        if (editedWorkerRates[id] !== undefined) {
+          const newRate = parseFloat(editedWorkerRates[id]);
+          updateData.rate = newRate;
+          updateData.monthlySalary = newRate;
+        }
+        if (editedWorkerStatus[id] !== undefined) {
+          updateData.isActive = editedWorkerStatus[id];
+        }
+        return workersApi.update(id, updateData);
+      });
+
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        setEditedWorkerRates({});
+        setEditedWorkerStatus({});
+        queryClient.invalidateQueries({ queryKey: ['workers-settings'] });
+        queryClient.invalidateQueries({ queryKey: ['workers'] });
+        toast.success("✅ Staff updates saved");
+      }
+    } catch (err: any) {
+      toast.error("❌ Failed to save staff updates", { description: err.message });
+    }
   };
 
   const renderSection = (
     title: string,
     items: any[],
     isLoading: boolean,
-    onRemove: (id: string) => void,
+    onRemove: (id: string, force: boolean) => void,
     onAdd: (value: string) => void,
     newValue: string,
     setNewValue: (v: string) => void,
     placeholder: string,
     label: string,
     displayKey: string = "name",
-    renderExtra?: () => JSX.Element
+    renderExtra?: () => JSX.Element,
+    showInactive?: boolean,
+    onToggleInactive?: (v: boolean) => void
   ) => (
     <EntryCard title={title}>
-      <div className="space-y-2 mb-4">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="h-6 w-6 animate-spin text-primary/40" />
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase">{title} List</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[8px] font-bold text-muted-foreground uppercase">Show Inactive</span>
+            <Switch
+              checked={showInactive || false}
+              onCheckedChange={onToggleInactive}
+              className="scale-75"
+            />
           </div>
-        ) : items.length > 0 ? (
-          items.filter(item => item.isActive !== false).map((item) => (
-            <div key={item.id} className="flex items-center gap-2 p-3 bg-secondary/30 rounded-xl group">
-              <span className="flex-1 text-sm font-medium text-foreground">
-                {item[displayKey]} {item.unit ? `(${item.unit})` : ''}
-              </span>
-              <button
-                onClick={() => onRemove(item.id)}
-                className="text-muted-foreground hover:text-destructive touch-target px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X className="h-4 w-4" />
-              </button>
+        </div>
+        <div className="space-y-2">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-primary/40" />
             </div>
-          ))
-        ) : (
-          <p className="text-xs text-muted-foreground italic text-center py-2">No {title.toLowerCase()} configured</p>
-        )}
+          ) : items.length > 0 ? (
+            items.filter(item => showInactive || item.isActive !== false).map((item) => (
+              <div key={item.id} className={`flex items-center gap-2 p-3 bg-secondary/30 rounded-xl group transition-opacity ${item.isActive === false ? 'opacity-60 bg-red-500/5' : ''}`}>
+                <span className="flex-1 text-sm font-medium text-foreground">
+                  {item[displayKey]} {item.unit ? `(${item.unit})` : ''}
+                  {item.isActive === false && <span className="ml-2 text-[8px] font-bold text-red-500 uppercase">Inactive</span>}
+                </span>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {item.isActive === false && (
+                    <button
+                      onClick={() => triggerConfirm({
+                        title: `Delete ${label} Permanently?`,
+                        description: `This will permanently remove this ${label.toLowerCase()} record. This action cannot be undone.`,
+                        onConfirm: () => onRemove(item.id, true)
+                      })}
+                      className="text-muted-foreground hover:text-destructive touch-target px-2"
+                      title="Delete Permanently"
+                    >
+                      <X className="h-4 w-4 text-red-500" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onRemove(item.id, false)}
+                    className={`text-muted-foreground hover:text-destructive touch-target px-2 ${item.isActive === false ? 'hidden' : ''}`}
+                    title="Deactivate"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs text-muted-foreground italic text-center py-2">No {title.toLowerCase()} configured</p>
+          )}
+        </div>
       </div>
       <div className="flex flex-col gap-2">
         {renderExtra && renderExtra()}
@@ -359,7 +465,7 @@ const SettingsPage = () => {
           </div>
 
           {/* Driver */}
-          <div className="space-y-3">
+          <div className="space-y-3 pb-4 border-b border-border/50">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-bold flex items-center gap-2">
                 3. Driver
@@ -388,6 +494,70 @@ const SettingsPage = () => {
             </div>
           </div>
 
+          {/* Individual Staff Members */}
+          {staffList.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-bold text-primary flex items-center gap-2">
+                  🧑‍💼 Individual Staff Rates & Status
+                </Label>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Managed Individually</span>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {staffList.map(s => {
+                  const isActive = editedWorkerStatus[s.id] !== undefined ? editedWorkerStatus[s.id] : s.isActive;
+                  const rate = editedWorkerRates[s.id] !== undefined ? editedWorkerRates[s.id] : s.monthlySalary;
+
+                  return (
+                    <div key={s.id} className={`flex items-center justify-between p-3 bg-secondary/20 rounded-xl border border-border/50 transition-opacity ${!isActive ? 'opacity-60' : ''}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-foreground truncate">{s.name}</p>
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${isActive ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                            {isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground uppercase font-medium">{s.role} • {s.paymentType}</p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-muted-foreground uppercase">Status</span>
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={(checked) => setEditedWorkerStatus(prev => ({ ...prev, [s.id]: checked }))}
+                          />
+                        </div>
+                        <div className="relative w-32">
+                          <span className="absolute -top-4 left-1 text-[8px] font-bold text-muted-foreground uppercase">Monthly Salary</span>
+                          <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <input
+                            type="number"
+                            value={rate}
+                            onChange={(e) => setEditedWorkerRates(prev => ({ ...prev, [s.id]: e.target.value }))}
+                            className="w-full h-10 pl-8 pr-3 bg-background border border-border rounded-xl text-sm font-bold focus:border-primary outline-none"
+                          />
+                        </div>
+                        {!isActive && (
+                          <button
+                            onClick={() => triggerConfirm({
+                              title: "Delete Staff Permanently?",
+                              description: `This will permanently remove staff member "${s.name}". This action cannot be undone.`,
+                              onConfirm: () => removeStaffMutation.mutate({ id: s.id, force: true })
+                            })}
+                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                            title="Delete Permanently"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <ActionButton
             label={updateSettingsMutation.isPending ? "Saving..." : "Save Salary Rates"}
             icon={updateSettingsMutation.isPending ? Loader2 : Save}
@@ -399,36 +569,52 @@ const SettingsPage = () => {
         </div>
       </EntryCard>
 
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        variant={confirmModal.variant}
+      />
+
       {renderSection(
         "Machines",
         machines,
         isMachinesLoading,
-        (id) => removeMachineMutation.mutate(id),
+        (id, force) => removeMachineMutation.mutate({ id, force }),
         (val) => addMachineMutation.mutate({ name: val }),
         newMachine,
         setNewMachine,
         "New machine name",
-        "Machine"
+        "Machine",
+        "name",
+        undefined,
+        showInactiveMachines,
+        setShowInactiveMachines
       )}
 
       {renderSection(
         "Brick Types",
         brickTypes,
         isBrickTypesLoading,
-        (id) => removeBrickTypeMutation.mutate(id),
+        (id, force) => removeBrickTypeMutation.mutate({ id, force }),
         (val) => addBrickTypeMutation.mutate({ size: val }),
         newBrickType,
         setNewBrickType,
         "New brick type (e.g. 6 inch)",
         "Brick Type",
-        "size"
+        "size",
+        undefined,
+        showInactiveBrickTypes,
+        setShowInactiveBrickTypes
       )}
 
       {renderSection(
         "Raw Materials",
         rawMaterials,
         isRawMaterialsLoading,
-        (id) => removeRawMaterialMutation.mutate(id),
+        (id, force) => removeRawMaterialMutation.mutate({ id, force }),
         (val) => addRawMaterialMutation.mutate({ name: val, unit: newRawMaterialUnit }),
         newRawMaterial,
         setNewRawMaterial,
@@ -450,7 +636,9 @@ const SettingsPage = () => {
               </button>
             ))}
           </div>
-        )
+        ),
+        showInactiveRawMaterials,
+        setShowInactiveRawMaterials
       )}
 
 
@@ -459,29 +647,60 @@ const SettingsPage = () => {
 
         {/* STAFFS */}
         <EntryCard title="🧑‍💼 Staffs">
-          <div className="space-y-2 mb-4">
-            {isStaffWorkersLoading ? (
-              <div className="flex justify-center py-3">
-                <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">Staff List</p>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-bold text-muted-foreground uppercase">Show Inactive</span>
+                <Switch
+                  checked={showInactiveStaff}
+                  onCheckedChange={setShowInactiveStaff}
+                  className="scale-75"
+                />
               </div>
-            ) : staffList.length > 0 ? (
-              staffList.map(s => (
-                <div key={s.id} className="flex items-center gap-2 p-2.5 bg-secondary/30 rounded-xl group">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">{s.name}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase font-medium">{s.role} • {s.paymentType}</p>
-                  </div>
-                  <button
-                    onClick={() => removeStaffMutation.mutate(s.id)}
-                    className="text-muted-foreground hover:text-destructive px-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+            </div>
+            <div className="space-y-2">
+              {isStaffWorkersLoading ? (
+                <div className="flex justify-center py-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
                 </div>
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground italic text-center py-2">No staff found</p>
-            )}
+              ) : staffList.length > 0 ? (
+                staffList.filter(s => showInactiveStaff || s.isActive).map(s => (
+                  <div key={s.id} className={`flex items-center gap-2 p-2.5 bg-secondary/30 rounded-xl group transition-opacity ${!s.isActive ? 'opacity-60 bg-red-500/5' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {s.name} {!s.isActive && <span className="ml-1 text-[8px] font-bold text-red-500 uppercase">(Inactive)</span>}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-medium">{s.role} • {s.paymentType}</p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {!s.isActive && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Permanently delete staff "${s.name}"? This cannot be undone.`)) {
+                              removeStaffMutation.mutate({ id: s.id, force: true });
+                            }
+                          }}
+                          className="text-muted-foreground hover:text-destructive px-1"
+                          title="Delete Permanently"
+                        >
+                          <X className="h-3.5 w-3.5 text-red-500" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeStaffMutation.mutate({ id: s.id, force: false })}
+                        className={`text-muted-foreground hover:text-destructive px-1 ${!s.isActive ? 'hidden' : ''}`}
+                        title="Deactivate"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic text-center py-2">No staff found</p>
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             <input
@@ -494,30 +713,24 @@ const SettingsPage = () => {
               <select
                 value={newStaffRole}
                 onChange={e => setNewStaffRole(e.target.value)}
-                className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
+                className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
               >
-                <option value="DRIVER">Driver</option>
                 <option value="MANAGER">Manager</option>
+                <option value="DRIVER">Driver</option>
                 <option value="TELECALLER">Telecaller</option>
-                <option value="OPERATOR">Operator</option>
-                <option value="HELPER">Helper</option>
-                <option value="LOADER">Loader</option>
-                <option value="MASON">Mason</option>
-              </select>
-              <select
-                value={newStaffPayment}
-                onChange={e => setNewStaffPayment(e.target.value)}
-                className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
-              >
-                <option value="MONTHLY">Monthly</option>
-                <option value="DAILY">Daily</option>
-                <option value="PER_BRICK">Per Brick</option>
+                <option value="ACCOUNTANT">Accountant</option>
+                <option value="OTHER">Other Staff</option>
               </select>
             </div>
+            <p className="text-[9px] text-muted-foreground italic px-1">Payment Type: Monthly Salary (Fixed)</p>
             <button
               onClick={() => {
                 if (!newStaffName.trim()) return;
-                addStaffMutation.mutate({ name: newStaffName.trim(), role: newStaffRole, paymentType: newStaffPayment });
+                addStaffMutation.mutate({
+                  name: newStaffName.trim(),
+                  role: newStaffRole,
+                  monthlySalary: 0 // Default to 0, managed individually
+                });
               }}
               disabled={!newStaffName.trim() || addStaffMutation.isPending}
               className="w-full h-10 flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
@@ -528,31 +741,59 @@ const SettingsPage = () => {
           </div>
         </EntryCard>
 
-        {/* WORKERS */}
         <EntryCard title="🔨 Workers">
-          <div className="space-y-2 mb-4">
-            {isStaffWorkersLoading ? (
-              <div className="flex justify-center py-3">
-                <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">Worker List</p>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-bold text-muted-foreground uppercase">Show Inactive</span>
+                <Switch
+                  checked={showInactiveWorkers}
+                  onCheckedChange={setShowInactiveWorkers}
+                  className="scale-75"
+                />
               </div>
-            ) : workerList.length > 0 ? (
-              workerList.map(w => (
-                <div key={w.id} className="flex items-center gap-2 p-2.5 bg-secondary/30 rounded-xl group">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground truncate">{w.name}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase font-medium">{w.role} • {w.paymentType}</p>
-                  </div>
-                  <button
-                    onClick={() => removeWorkerMutation.mutate(w.id)}
-                    className="text-muted-foreground hover:text-destructive px-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+            </div>
+            <div className="space-y-2">
+              {isStaffWorkersLoading ? (
+                <div className="flex justify-center py-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
                 </div>
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground italic text-center py-2">No workers found</p>
-            )}
+              ) : workerList.length > 0 ? (
+                workerList.filter(w => showInactiveWorkers || w.isActive).map(w => (
+                  <div key={w.id} className={`flex items-center gap-2 p-2.5 bg-secondary/30 rounded-xl group transition-opacity ${!w.isActive ? 'opacity-60 bg-red-500/5' : ''}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {w.name} {!w.isActive && <span className="ml-1 text-[8px] font-bold text-red-500 uppercase">(Inactive)</span>}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-medium">{w.role} • {w.paymentType.replace('_', ' ')}</p>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {!w.isActive && (
+                        <button
+                          onClick={() => triggerConfirm({
+                            title: "Delete Worker Permanently?",
+                            description: `This will permanently remove worker "${w.name}". This action cannot be undone.`,
+                            onConfirm: () => removeWorkerMutation.mutate({ id: w.id, force: true })
+                          })}
+                          className="text-muted-foreground hover:text-destructive px-1"
+                        >
+                          <X className="h-3.5 w-3.5 text-red-500" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeWorkerMutation.mutate({ id: w.id, force: false })}
+                        className={`text-muted-foreground hover:text-destructive px-1 ${!w.isActive ? 'hidden' : ''}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic text-center py-2">No workers found</p>
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             <input
@@ -571,9 +812,6 @@ const SettingsPage = () => {
                 <option value="HELPER">Helper</option>
                 <option value="LOADER">Loader</option>
                 <option value="MASON">Mason</option>
-                <option value="DRIVER">Driver</option>
-                <option value="MANAGER">Manager</option>
-                <option value="TELECALLER">Telecaller</option>
               </select>
               <select
                 value={newWorkerPayment}
@@ -581,17 +819,23 @@ const SettingsPage = () => {
                 className="h-10 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
               >
                 <option value="PER_BRICK">Per Brick</option>
-                <option value="DAILY">Daily</option>
-                <option value="MONTHLY">Monthly</option>
+                <option value="WEEKLY">Weekly</option>
               </select>
             </div>
+
             <button
               onClick={() => {
                 if (!newWorkerName.trim()) return;
-                addWorkerMutation.mutate({ name: newWorkerName.trim(), role: newWorkerRole, paymentType: newWorkerPayment });
+                addWorkerMutation.mutate({
+                  name: newWorkerName.trim(),
+                  role: newWorkerRole,
+                  paymentType: newWorkerPayment,
+                  perBrickRate: 0,
+                  weeklyWage: 0
+                });
               }}
               disabled={!newWorkerName.trim() || addWorkerMutation.isPending}
-              className="w-full h-10 flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              className="w-full h-12 flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {addWorkerMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Add Worker

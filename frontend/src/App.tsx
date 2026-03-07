@@ -20,6 +20,7 @@ import ClientsPage from "./pages/ClientsPage";
 import ClientProfilePage from "./pages/ClientProfilePage";
 import ClientOrdersPage from "./pages/ClientOrdersPage";
 import DispatchSchedulingPage from "./pages/DispatchSchedulingPage";
+import ClientHistoryPage from "./pages/ClientHistoryPage";
 import ClientLedgerPage from "./pages/ClientLedgerPage";
 import NotFound from "./pages/NotFound";
 
@@ -99,6 +100,16 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <DispatchSchedulingPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-history"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <ClientHistoryPage />
                 </AppLayout>
               </ProtectedRoute>
             }

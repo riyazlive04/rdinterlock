@@ -25,8 +25,8 @@ import {
 import { format } from "date-fns";
 import { KPICard } from "@/components/KPICard";
 
-const roles = ["PRODUCTION", "MASON", "DRIVER", "LOADER", "OPERATOR", "HELPER", "OFFICE"];
-const paymentTypes = ["PER_BRICK", "DAILY", "MONTHLY"];
+const roles = ["PRODUCTION", "MASON", "LOADER", "OPERATOR", "HELPER"];
+const paymentTypes = ["PER_BRICK", "WEEKLY"];
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { workersApi } from "@/api/workers.api";
@@ -134,14 +134,15 @@ const WorkersPage = () => {
   const queryClient = useQueryClient();
   const getInitials = (name: string) => name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const [name, setName] = useState("");
-  const [role, setRole] = useState("Production");
-  const [payType, setPayType] = useState("Per Brick");
-  const [rate, setRate] = useState("");
+  const [role, setRole] = useState("OPERATOR");
+  const [payType, setPayType] = useState("PER_BRICK");
+  const [weeklyWage, setWeeklyWage] = useState("");
+  const [perBrickRate, setPerBrickRate] = useState("");
   const [showInactive, setShowInactive] = useState(false);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers', showInactive],
-    queryFn: () => workersApi.getAll(!showInactive),
+    queryFn: () => workersApi.getAll(!showInactive, 'Worker'),
   });
 
   const updateWorkerMutation = useMutation({
@@ -159,7 +160,8 @@ const WorkersPage = () => {
       queryClient.invalidateQueries({ queryKey: ['workers'] });
       toast.success("✅ Worker Added");
       setName("");
-      setRate("");
+      setWeeklyWage("");
+      setPerBrickRate("");
     },
   });
 
@@ -168,12 +170,19 @@ const WorkersPage = () => {
   };
 
   const saveWorker = () => {
-    if (!name.trim() || !rate) return;
+    if (!name.trim()) return;
+    const isPerBrick = payType === 'PER_BRICK';
+    if (isPerBrick && !perBrickRate) return;
+    if (!isPerBrick && !weeklyWage) return;
+
     createWorkerMutation.mutate({
       name: name.trim(),
       role: role.toUpperCase(),
-      paymentType: payType.toUpperCase().replace(" ", "_"),
-      rate: parseFloat(rate),
+      employeeType: 'Worker',
+      paymentType: payType.toUpperCase(),
+      perBrickRate: isPerBrick ? parseFloat(perBrickRate) : 0,
+      weeklyWage: !isPerBrick ? parseFloat(weeklyWage) : 0,
+      rate: isPerBrick ? parseFloat(perBrickRate) : parseFloat(weeklyWage),
       isActive: true
     } as any);
   };
@@ -212,14 +221,23 @@ const WorkersPage = () => {
           </FormField>
 
           <FormField label="Rate (₹)" required>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              placeholder="Enter rate"
-              className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
-            />
+            {payType === 'PER_BRICK' ? (
+              <input
+                type="number"
+                value={perBrickRate}
+                onChange={(e) => setPerBrickRate(e.target.value)}
+                placeholder="Per Brick Rate"
+                className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
+              />
+            ) : (
+              <input
+                type="number"
+                value={weeklyWage}
+                onChange={(e) => setWeeklyWage(e.target.value)}
+                placeholder="Weekly Wage"
+                className="w-full h-12 px-3 bg-secondary/50 border border-border rounded-xl text-foreground text-sm focus:border-primary focus:outline-none transition-colors"
+              />
+            )}
           </FormField>
 
           <ActionButton
@@ -268,21 +286,21 @@ const WorkersPage = () => {
                     )}
                   </div>
                 </div>
-                <div className="text-right flex items-center gap-2">
-                  <div className="flex flex-col items-end gap-1 mr-2">
-                    <span className="text-sm font-bold text-foreground">₹{w.rate}</span>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <button className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline transition-all">
-                          <BarChart3 className="h-3 w-3" />
-                          STATS
-                        </button>
-                      </DialogTrigger>
-                      <WorkerStatsModal worker={w} />
-                    </Dialog>
-                  </div>
-                  <Switch checked={w.isActive} onCheckedChange={() => toggleWorkerStatus(w.id, w.isActive)} />
+                <div className="flex flex-col items-end gap-1 mr-2">
+                  <span className="text-sm font-bold text-foreground">
+                    ₹{w.paymentType === 'PER_BRICK' ? w.perBrickRate : w.weeklyWage}
+                  </span>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <button className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline transition-all">
+                        <BarChart3 className="h-3 w-3" />
+                        STATS
+                      </button>
+                    </DialogTrigger>
+                    <WorkerStatsModal worker={w} />
+                  </Dialog>
                 </div>
+                <Switch checked={w.isActive} onCheckedChange={() => toggleWorkerStatus(w.id, w.isActive)} />
               </div>
             ))
           ) : (

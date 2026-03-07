@@ -15,8 +15,9 @@ export class WorkersController {
 
   getAllWorkers = asyncHandler(async (req: Request, res: Response) => {
     const activeOnly = req.query.activeOnly === 'true';
-    const workers = await workersService.getAllWorkers(activeOnly);
-    sendSuccess(res, workers, 'Workers retrieved successfully');
+    const employeeType = req.query.employeeType as string;
+    const workers = await workersService.getAllWorkers(activeOnly, employeeType);
+    sendSuccess(res, workers, 'Employees retrieved successfully');
   });
 
   getWorkerById = asyncHandler(async (req: Request, res: Response) => {
@@ -34,8 +35,9 @@ export class WorkersController {
 
   deleteWorker = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await workersService.deleteWorker(id);
-    sendSuccess(res, result, 'Worker deleted successfully');
+    const force = req.query.force === 'true';
+    const result = await workersService.deleteWorker(id, force);
+    sendSuccess(res, result, force ? 'Worker deleted permanently' : 'Worker deleted successfully');
   });
 
   getWorkerStats = asyncHandler(async (req: Request, res: Response) => {
