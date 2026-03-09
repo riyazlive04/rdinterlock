@@ -37,6 +37,7 @@ interface WorkerWageRecord {
   grossWage: number;
   advanceBalance: number;
   daysPresent: number;
+  advanceDetails?: { id: string; amount: number; date: string; paymentMode: string }[];
 }
 
 const TABS = ["Operations", "Staff Salaries", "Worker Wages"];
@@ -104,8 +105,8 @@ const ReportsPage = () => {
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${activeTab === tab
-                ? "bg-background text-primary shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+              ? "bg-background text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
               }`}
           >
             {tab}
@@ -122,8 +123,8 @@ const ReportsPage = () => {
                 key={r}
                 onClick={() => handleQuickFilter(r)}
                 className={`h-10 px-5 rounded-full text-sm font-semibold transition-all active:scale-95 touch-target ${quickFilter === r
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-secondary/70 text-secondary-foreground hover:bg-secondary"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-secondary/70 text-secondary-foreground hover:bg-secondary"
                   }`}
               >
                 {r}
@@ -226,10 +227,24 @@ const ReportsPage = () => {
                         <span className="font-bold">₹{s.salary.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between pl-4">
-                        <span className="text-muted-foreground text-destructive">Advance Ded:</span>
+                        <span className="text-muted-foreground text-destructive">Total Adv:</span>
                         <span className="font-bold text-destructive">-₹{s.advanceUsed?.toLocaleString() ?? 0}</span>
                       </div>
                     </div>
+                    {/* Advance Breakdown */}
+                    {s.advanceDetails && s.advanceDetails.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-dashed border-border/50">
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground mb-2">Advance Details</p>
+                        <div className="space-y-1.5">
+                          {s.advanceDetails.map((adv: any) => (
+                            <div key={adv.id} className="flex justify-between items-center text-xs bg-secondary/30 p-1.5 rounded-lg">
+                              <span className="text-muted-foreground">{format(new Date(adv.date), 'dd MMM yyyy')} • {adv.paymentMode}</span>
+                              <span className="font-bold text-destructive">₹{adv.amount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -352,16 +367,31 @@ const ReportsPage = () => {
                           <span className="font-bold">₹{w.grossWage.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between pl-4">
-                          <span className="text-muted-foreground text-destructive">Advance Bal:</span>
+                          <span className="text-muted-foreground text-destructive">Total Adv:</span>
                           <span className="font-bold text-destructive">-₹{w.advanceBalance.toLocaleString()}</span>
                         </div>
                         {!isMason && (
-                          <div className="flex justify-between col-span-2 pt-1">
+                          <div className="flex justify-between col-span-2 pt-1 border-t border-border/30 mt-1">
                             <span className="text-muted-foreground">Days Present:</span>
                             <span className="font-bold">{w.daysPresent}</span>
                           </div>
                         )}
                       </div>
+
+                      {/* Advance Breakdown */}
+                      {w.advanceDetails && w.advanceDetails.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-dashed border-border/50">
+                          <p className="text-[10px] uppercase font-bold text-muted-foreground mb-2">Advance Details</p>
+                          <div className="space-y-1.5">
+                            {w.advanceDetails.map((adv) => (
+                              <div key={adv.id} className="flex justify-between items-center text-xs bg-secondary/30 p-1.5 rounded-lg">
+                                <span className="text-muted-foreground">{format(new Date(adv.date), 'dd MMM yyyy')} • {adv.paymentMode}</span>
+                                <span className="font-bold text-destructive">₹{adv.amount.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

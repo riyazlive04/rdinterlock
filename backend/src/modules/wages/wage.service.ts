@@ -446,6 +446,17 @@ export class WageService {
           },
         });
 
+        // Fetch advances given to the worker in this specific date range
+        const givenAdvances = await prisma.workerAdvance.findMany({
+          where: {
+            workerId: worker.id,
+            type: 'GIVEN',
+            date: { gte: startOfDay, lte: endOfDay },
+          },
+        });
+
+        const totalAdvancePaid = givenAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+
         return {
           workerId: worker.id,
           workerName: worker.name,
@@ -456,8 +467,15 @@ export class WageService {
           nightBricks,
           totalBricks,
           grossWage,
-          advanceBalance: worker.advanceBalance,
+          advanceBalance: totalAdvancePaid, // Use advanceBalance field to pass the period's advance paid amount to match frontend expectation
           daysPresent: attendanceCount,
+          advanceDetails: givenAdvances.map(a => ({
+            id: a.id,
+            amount: a.amount,
+            date: a.date,
+            // @ts-ignore
+            paymentMode: a.paymentMode,
+          })),
         };
       })
     );

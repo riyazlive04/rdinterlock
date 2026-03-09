@@ -19,6 +19,27 @@ export class CashbookService {
       } as any,
     });
 
+    // Create corresponding advance record if category applies
+    if ((data.category === 'Worker Advance' || data.category === 'Staff Advance') && data.workerId) {
+      // @ts-ignore
+      await prisma.workerAdvance.create({
+        data: {
+          workerId: data.workerId,
+          amount: data.amount,
+          type: 'GIVEN',
+          date: new Date(data.date),
+          // @ts-ignore
+          paymentMode: data.paymentMode || 'CASH',
+          note: data.description ? `${data.description} (CashBook: ${cashEntry.id})` : `Advance via CashBook (ID: ${cashEntry.id})`,
+        }
+      });
+
+      await prisma.worker.update({
+        where: { id: data.workerId },
+        data: { advanceBalance: { increment: data.amount } }
+      });
+    }
+
     return cashEntry;
   }
 
@@ -107,6 +128,39 @@ export class CashbookService {
       } as any,
     });
 
+    // Sync Worker Advances
+    // 1. Delete existing advance linked to this cash entry
+    const existingAdvances = await prisma.workerAdvance.findMany({
+      where: { note: { contains: `(CashBook: ${id})` } },
+    });
+    for (const adv of existingAdvances) {
+      await prisma.worker.update({
+        where: { id: adv.workerId },
+        data: { advanceBalance: { decrement: adv.amount } }
+      });
+      await prisma.workerAdvance.delete({ where: { id: adv.id } });
+    }
+
+    // 2. Create new advance if updated category is an advance
+    if ((updated.category === 'Worker Advance' || updated.category === 'Staff Advance') && updated.workerId) {
+      // @ts-ignore
+      await prisma.workerAdvance.create({
+        data: {
+          workerId: updated.workerId,
+          amount: updated.amount,
+          type: 'GIVEN',
+          date: updated.date,
+          // @ts-ignore
+          paymentMode: updated.paymentMode || 'CASH',
+          note: updated.description ? `${updated.description} (CashBook: ${updated.id})` : `Advance via CashBook (ID: ${updated.id})`,
+        }
+      });
+      await prisma.worker.update({
+        where: { id: updated.workerId },
+        data: { advanceBalance: { increment: updated.amount } }
+      });
+    }
+
     return updated;
   }
 
@@ -117,6 +171,18 @@ export class CashbookService {
 
     if (!entry) {
       throw new AppError('Cash entry not found', 404);
+    }
+
+    // Delete existing advance linked to this cash entry if it exists
+    const existingAdvances = await prisma.workerAdvance.findMany({
+      where: { note: { contains: `(CashBook: ${id})` } },
+    });
+    for (const adv of existingAdvances) {
+      await prisma.worker.update({
+        where: { id: adv.workerId },
+        data: { advanceBalance: { decrement: adv.amount } }
+      });
+      await prisma.workerAdvance.delete({ where: { id: adv.id } });
     }
 
     await prisma.cashEntry.delete({

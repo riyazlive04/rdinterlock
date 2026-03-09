@@ -13,6 +13,8 @@ export class ExpensesService {
       if (!worker) {
         throw new AppError('Worker not found', 404);
       }
+    } else if (data.category === 'STAFF ADVANCE' || data.category === 'WORKER ADVANCE') {
+      throw new AppError('Worker or Staff must be selected for an advance', 400);
     }
 
     // If materialId is provided, validate material exists
@@ -77,6 +79,28 @@ export class ExpensesService {
             amount: data.amount,
             description: description,
             category: 'OTHER', // General category for expenses in cashbook
+          },
+        });
+      }
+
+      // 3. Create Worker Advance if applicable
+      if ((data.category === 'STAFF ADVANCE' || data.category === 'WORKER ADVANCE') && data.workerId) {
+        await tx.workerAdvance.create({
+          data: {
+            workerId: data.workerId,
+            amount: data.amount,
+            type: 'GIVEN',
+            date: new Date(data.date),
+            paymentMode: data.paymentMode || 'CASH',
+            note: data.notes ? `${data.notes} (Exp: ${expense.id})` : `Advance via Expenses (Exp: ${expense.id})`,
+          },
+        });
+
+        // Update Worker's advance balance
+        await tx.worker.update({
+          where: { id: data.workerId },
+          data: {
+            advanceBalance: { increment: data.amount },
           },
         });
       }
@@ -231,6 +255,38 @@ export class ExpensesService {
         });
       }
 
+      // Sync Worker Advances
+      // 1. Clear existing advances related to this expense
+      const existingAdvances = await tx.workerAdvance.findMany({
+        where: { note: { contains: `(Exp: ${id})` } },
+      });
+      for (const adv of existingAdvances) {
+        await tx.worker.update({
+          where: { id: adv.workerId },
+          data: { advanceBalance: { decrement: adv.amount } },
+        });
+        await tx.workerAdvance.delete({ where: { id: adv.id } });
+      }
+
+      // 2. Create new advance if category is an advance
+      if ((updated.category === 'STAFF ADVANCE' || updated.category === 'WORKER ADVANCE') && updated.workerId) {
+        await tx.workerAdvance.create({
+          data: {
+            workerId: updated.workerId,
+            amount: updated.amount,
+            type: 'GIVEN',
+            date: updated.date,
+            paymentMode: updated.paymentMode || 'CASH',
+            note: updated.notes ? `${updated.notes} (Exp: ${updated.id})` : `Advance via Expenses (Exp: ${updated.id})`,
+          },
+        });
+
+        await tx.worker.update({
+          where: { id: updated.workerId },
+          data: { advanceBalance: { increment: updated.amount } },
+        });
+      }
+
       return updated;
     });
   }
@@ -258,6 +314,18 @@ export class ExpensesService {
           },
         },
       });
+
+      // Delete related worker advances
+      const existingAdvances = await tx.workerAdvance.findMany({
+        where: { note: { contains: `(Exp: ${id})` } },
+      });
+      for (const adv of existingAdvances) {
+        await tx.worker.update({
+          where: { id: adv.workerId },
+          data: { advanceBalance: { decrement: adv.amount } },
+        });
+        await tx.workerAdvance.delete({ where: { id: adv.id } });
+      }
 
       // Delete the expense
       await tx.expense.delete({

@@ -300,6 +300,7 @@ model WorkerAdvance {
   amount   Float
   type     String
   date     DateTime
+  paymentMode String @default("CASH")
   note     String?
   worker   Worker   @relation(fields: [workerId], references: [id])
 

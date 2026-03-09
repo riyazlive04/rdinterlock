@@ -55,9 +55,20 @@ export class MonthlySettlementService {
 
       const salary = presentDays * activeRate;
 
-      // Check advance balance
-      const advanceUsed = Math.min(worker.advanceBalance, salary);
-      const netPaid = salary - advanceUsed;
+      // Fetch given advances for this worker in this month
+      const givenAdvances = await prisma.workerAdvance.findMany({
+        where: {
+          workerId: worker.id,
+          type: 'GIVEN',
+          date: { gte: startDate, lte: endDate },
+        },
+      });
+
+      const totalAdvancePaid = givenAdvances.reduce((sum, adv) => sum + adv.amount, 0);
+
+      // Check advance balance (we use the sum of advances given in this period as per user requirements)
+      const advanceUsed = totalAdvancePaid; // Or Math.min(totalAdvancePaid, salary) if we only deduct up to salary
+      const netPaid = Math.max(0, salary - advanceUsed);
 
       salaries.push({
         workerId: worker.id,
@@ -66,9 +77,16 @@ export class MonthlySettlementService {
         presentDays,
         dailyRate: worker.rate,
         salary,
-        advanceBalance: worker.advanceBalance,
+        advanceBalance: worker.advanceBalance, // Still pass the running balance if needed elsewhere
         advanceUsed,
         netPaid,
+        advanceDetails: givenAdvances.map(a => ({
+          id: a.id,
+          amount: a.amount,
+          date: a.date,
+          // @ts-ignore
+          paymentMode: a.paymentMode,
+        })),
       });
     }
 

@@ -8,16 +8,18 @@ export class ReportsService {
   async getDashboardSummary() {
     const todayRange = getTodayRange();
 
-    // Today's production
+    // Today's production (using availableBricks for net good bricks)
     const todayProduction = await prisma.production.aggregate({
       where: {
         date: todayRange,
       },
-      _sum: { quantity: true },
+      _sum: { availableBricks: true },
       _count: true,
     });
 
-    // Today's dispatch
+    // Today's dispatch — count from BOTH:
+    //  1. Dispatch table (status: Completed — schedule was moved here when completed)
+    //  2. DispatchSchedule table (status: DISPATCHED — not yet marked completed)
     const todayDispatch = await prisma.dispatch.aggregate({
       where: {
         date: todayRange,
@@ -25,6 +27,20 @@ export class ReportsService {
       _sum: { quantity: true },
       _count: true,
     });
+
+    const todayDispatchedSchedules = await prisma.dispatchSchedule.aggregate({
+      where: {
+        dispatchDate: todayRange,
+        status: 'DISPATCHED',
+      },
+      _sum: { quantity: true },
+      _count: true,
+    });
+
+    const combinedTodayDispatch = {
+      quantity: (todayDispatch._sum.quantity || 0) + (todayDispatchedSchedules._sum.quantity || 0),
+      count: (todayDispatch._count || 0) + (todayDispatchedSchedules._count || 0),
+    };
 
     // Today's expenses (from Cash Book)
     const todayExpenses = await (prisma.cashEntry as any).aggregate({
@@ -46,7 +62,7 @@ export class ReportsService {
       brickTypes.map(async (bt: any) => {
         const produced = await prisma.production.aggregate({
           where: { brickTypeId: bt.id },
-          _sum: { quantity: true },
+          _sum: { availableBricks: true },
         });
 
         const dispatched = await prisma.dispatch.aggregate({
@@ -56,7 +72,7 @@ export class ReportsService {
 
         return {
           brickType: bt.size,
-          stock: (produced._sum.quantity || 0) - (dispatched._sum.quantity || 0),
+          stock: (produced._sum.availableBricks || 0) - (dispatched._sum.quantity || 0),
         };
       })
     );
@@ -86,12 +102,12 @@ export class ReportsService {
 
     return {
       todayProduction: {
-        quantity: todayProduction._sum.quantity || 0,
+        quantity: todayProduction._sum.availableBricks || 0,
         count: todayProduction._count,
       },
       todayDispatch: {
-        quantity: todayDispatch._sum.quantity || 0,
-        count: todayDispatch._count,
+        quantity: combinedTodayDispatch.quantity,
+        count: combinedTodayDispatch.count,
       },
       todayExpenses: {
         amount: todayExpenses._sum.amount || 0,
@@ -126,7 +142,7 @@ export class ReportsService {
       orderBy: { date: 'desc' },
     });
 
-    const totalQuantity = productions.reduce((sum: number, p: any) => sum + p.quantity, 0);
+    const totalQuantity = productions.reduce((sum: number, p: any) => sum + p.availableBricks, 0);
 
     // Group by brick type
     const byBrickType: any = {};
@@ -137,7 +153,7 @@ export class ReportsService {
           count: 0,
         };
       }
-      byBrickType[p.brickType.size].quantity += p.quantity;
+      byBrickType[p.brickType.size].quantity += p.availableBricks;
       byBrickType[p.brickType.size].count += 1;
     });
 
@@ -150,7 +166,7 @@ export class ReportsService {
           count: 0,
         };
       }
-      byMachine[p.machine.name].quantity += p.quantity;
+      byMachine[p.machine.name].quantity += p.availableBricks;
       byMachine[p.machine.name].count += 1;
     });
 

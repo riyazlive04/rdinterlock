@@ -38,15 +38,13 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Daily Entry", url: "/daily-entry", icon: BookOpen, highlight: true },
-  { title: "Dispatch", url: "/dispatch", icon: Truck },
 ];
 
 const clientLoungeItems = [
-  { title: "Clients", url: "/clients", icon: UserCircle },
-  { title: "Client Orders", url: "/client-orders", icon: ShoppingCart },
+  { title: "Client Management", url: "/client-management", icon: UserCircle },
   { title: "Dispatch Schedule", url: "/dispatch-scheduling", icon: CalendarClock },
-  { title: "Client History", url: "/client-history", icon: Truck },
   { title: "Client Ledger", url: "/client-ledger", icon: CreditCard },
+  { title: "Client History", url: "/client-history", icon: Truck },
 ];
 
 const navItemsAfter = [
@@ -63,7 +61,7 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [loungeOpen, setLoungeOpen] = useState(
-    clientLoungeItems.some((item) => location.pathname === item.url || location.pathname.startsWith("/clients"))
+    clientLoungeItems.some((item) => location.pathname === item.url || location.pathname.startsWith("/client-management"))
   );
 
   const handleLogout = () => {
@@ -135,13 +133,13 @@ export function AppSidebar() {
               {loungeOpen && !collapsed && (
                 <div className="ml-4 border-l-2 border-sidebar-border/30 pl-2 space-y-0.5">
                   {clientLoungeItems.map((item) => {
-                    const isActive = location.pathname === item.url || (item.url === "/clients" && location.pathname.startsWith("/clients/"));
+                    const isActive = location.pathname === item.url || location.pathname.startsWith(item.url + "/");
                     return (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton asChild className="h-9 mb-0">
                           <NavLink
                             to={item.url}
-                            end={item.url === "/clients"}
+                            end
                             className="rounded-lg transition-all duration-200 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
                             activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                           >

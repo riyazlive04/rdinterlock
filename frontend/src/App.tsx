@@ -19,6 +19,7 @@ import AttendancePage from "./pages/AttendancePage";
 import ClientsPage from "./pages/ClientsPage";
 import ClientProfilePage from "./pages/ClientProfilePage";
 import ClientOrdersPage from "./pages/ClientOrdersPage";
+import ClientManagementPage from "./pages/ClientManagementPage";
 import DispatchSchedulingPage from "./pages/DispatchSchedulingPage";
 import ClientHistoryPage from "./pages/ClientHistoryPage";
 import ClientLedgerPage from "./pages/ClientLedgerPage";
@@ -80,6 +81,16 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <ClientProfilePage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-management"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <ClientManagementPage />
                 </AppLayout>
               </ProtectedRoute>
             }

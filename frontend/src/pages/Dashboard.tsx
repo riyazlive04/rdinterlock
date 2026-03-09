@@ -15,6 +15,8 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recha
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "@/api/dashboard.api";
+import { clientsApi } from "@/api/clients.api";
+import { format, isToday } from "date-fns";
 
 const productionData = [
   { day: "Mon", qty: 2400 },
@@ -41,6 +43,12 @@ const Dashboard = () => {
     queryKey: ['dashboard-summary'],
     queryFn: dashboardApi.getSummary,
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const { data: upcomingDispatches, isLoading: isLoadingDispatches } = useQuery({
+    queryKey: ['upcoming-dispatches'],
+    queryFn: clientsApi.getUpcomingDispatches,
+    refetchInterval: 60000, // Refresh every minute
   });
 
   if (isLoading) {
@@ -71,45 +79,45 @@ const Dashboard = () => {
   return (
     <MobileFormLayout title="Dashboard">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <KPICard 
-          title="Today Production" 
-          value={dashboardData?.todayProduction?.quantity?.toLocaleString() || '0'} 
-          icon={Factory} 
-          variant="primary" 
-          onClick={() => navigate("/daily-entry")} 
+        <KPICard
+          title="Today Production"
+          value={dashboardData?.todayProduction?.quantity?.toLocaleString() || '0'}
+          icon={Factory}
+          variant="primary"
+          onClick={() => navigate("/daily-entry")}
         />
-        <KPICard 
-          title="Ready Stock" 
-          value={totalReadyStock.toLocaleString()} 
-          icon={Package} 
-          variant="success" 
-          onClick={() => navigate("/stock")} 
+        <KPICard
+          title="Ready Stock"
+          value={totalReadyStock.toLocaleString()}
+          icon={Package}
+          variant="success"
+          onClick={() => navigate("/stock")}
         />
-        <KPICard 
-          title="Today Dispatch" 
-          value={dashboardData?.todayDispatch?.quantity?.toLocaleString() || '0'} 
-          icon={Truck} 
-          variant="accent" 
-          onClick={() => navigate("/dispatch")} 
+        <KPICard
+          title="Today Dispatch"
+          value={dashboardData?.todayDispatch?.quantity?.toLocaleString() || '0'}
+          icon={Truck}
+          variant="accent"
+          onClick={() => navigate("/dispatch")}
         />
-        <KPICard 
-          title="Cash Balance" 
-          value={`₹${((dashboardData?.cashBalance || 0) / 100000).toFixed(1)}L`} 
-          icon={Wallet} 
-          onClick={() => navigate("/cash-book")} 
+        <KPICard
+          title="Cash Balance"
+          value={`₹${((dashboardData?.cashBalance || 0) / 100000).toFixed(1)}L`}
+          icon={Wallet}
+          onClick={() => navigate("/cash-book")}
         />
-        <KPICard 
-          title="Expenses Today" 
-          value={`₹${((dashboardData?.todayExpenses?.amount || 0) / 1000).toFixed(1)}K`} 
-          icon={Receipt} 
-          variant="warning" 
-          onClick={() => navigate("/expenses")} 
+        <KPICard
+          title="Expenses Today"
+          value={`₹${((dashboardData?.todayExpenses?.amount || 0) / 1000).toFixed(1)}K`}
+          icon={Receipt}
+          variant="warning"
+          onClick={() => navigate("/expenses")}
         />
-        <KPICard 
-          title="Pending Payments" 
-          value={`₹${((dashboardData?.pendingPayments || 0) / 1000).toFixed(1)}K`} 
-          icon={Clock} 
-          onClick={() => navigate("/dispatch")} 
+        <KPICard
+          title="Pending Payments"
+          value={`₹${((dashboardData?.pendingPayments || 0) / 1000).toFixed(1)}K`}
+          icon={Clock}
+          onClick={() => navigate("/dispatch")}
         />
       </div>
 
@@ -126,6 +134,54 @@ const Dashboard = () => {
           <p className="text-xs text-muted-foreground">Machine B Night Shift — no production entry yet</p>
         </div>
       </div>
+
+      {/* Upcoming Dispatch Alert - HIGH PRIORITY */}
+      {!isLoadingDispatches && upcomingDispatches && upcomingDispatches.length > 0 && (
+        <div className="card-modern p-4 border-destructive/40 bg-destructive/10">
+          <div className="flex items-center gap-2 mb-3">
+            <Truck className="h-5 w-5 text-destructive animate-pulse" />
+            <h2 className="font-bold text-destructive text-sm uppercase tracking-wide">
+              ⚠ Upcoming Dispatch
+            </h2>
+          </div>
+
+          <div className="space-y-2">
+            {upcomingDispatches.map((dispatch: any) => {
+              const dispatchDate = new Date(dispatch.expectedDispatchDate);
+              const isDueToday = isToday(dispatchDate);
+
+              return (
+                <div
+                  key={dispatch.id}
+                  className={`p-3 rounded-xl border ${isDueToday
+                    ? "border-destructive/60 bg-destructive/20"
+                    : "border-destructive/20 bg-background/50"
+                    } flex flex-col justify-between items-start cursor-pointer hover:bg-destructive/20 transition-colors`}
+                  onClick={() => navigate('/client-management')}
+                >
+                  <div className="w-full flex justify-between items-start mb-1">
+                    <p className="font-bold text-foreground text-sm">{dispatch.client?.name}</p>
+                    {isDueToday && (
+                      <span className="text-[10px] bg-destructive text-destructive-foreground px-2 py-0.5 rounded-full font-bold animate-pulse uppercase">
+                        Today Dispatch
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between w-full mt-1">
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      {dispatch.brickType?.size} – <span className="text-foreground">{(dispatch.quantity ?? 0).toLocaleString()} pcs</span>
+                    </p>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-destructive">
+                      <Clock className="h-3 w-3" />
+                      <span>Dispatch: {format(dispatchDate, "dd MMM yyyy")}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="card-modern p-5 animate-fade-in">
         <div className="flex items-center gap-2 mb-4">

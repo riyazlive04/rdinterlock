@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { MobileFormLayout } from "@/components/MobileFormLayout";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, Loader2, X, Download, IndianRupee, Tag } from "lucide-react";
+import { Plus, Edit2, Trash2, Loader2, X, Download, IndianRupee, Tag, Search, MapPin } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi } from "@/api/clients.api";
 import { cn } from "@/lib/utils";
@@ -12,17 +12,16 @@ const ClientLedgerPage = () => {
     const queryClient = useQueryClient();
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<any>(null);
-    const [filterClient, setFilterClient] = useState("");
-    const [typeFilter, setTypeFilter] = useState("ALL");
+    const [search, setSearch] = useState("");
+    const [filterType, setFilterType] = useState("ALL");
     const [formType, setFormType] = useState<"PAYMENT" | "ADVANCE">("PAYMENT");
     const [form, setForm] = useState({ clientId: "", orderId: "", amount: "", paymentDate: new Date().toISOString().split("T")[0], paymentMethod: "CASH", notes: "" });
 
-    const { data: payments = [], isLoading } = useQuery({
-        queryKey: ["client-payments", filterClient],
-        queryFn: () => clientsApi.getAllPayments({ clientId: filterClient || undefined }),
+    const { data: clients = [], isLoading } = useQuery({
+        queryKey: ["clients", search],
+        queryFn: () => clientsApi.getAll(search || undefined)
     });
 
-    const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: () => clientsApi.getAll() });
     const { data: orders = [] } = useQuery({
         queryKey: ["client-orders-for-payment", form.clientId],
         queryFn: () => clientsApi.getAllOrders({ clientId: form.clientId }),
@@ -31,19 +30,18 @@ const ClientLedgerPage = () => {
 
     const createMut = useMutation({
         mutationFn: (data: any) => clientsApi.createPayment(data),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["client-payments"] }); queryClient.invalidateQueries({ queryKey: ["client-orders"] }); setShowModal(false); resetForm(); toast.success(`✅ ${formType === "ADVANCE" ? "Advance" : "Payment"} recorded`); },
-        onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
-    });
-
-    const updateMut = useMutation({
-        mutationFn: ({ id, data }: any) => clientsApi.updatePayment(id, data),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["client-payments"] }); setShowModal(false); setEditing(null); resetForm(); toast.success("✅ Updated successfully"); },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["clients"] });
+            setShowModal(false);
+            resetForm();
+            toast.success(`✅ ${formType === "ADVANCE" ? "Advance" : "Payment"} recorded`);
+        },
         onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
     });
 
     const deleteMut = useMutation({
         mutationFn: (id: string) => clientsApi.deletePayment(id),
-        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["client-payments"] }); toast.success("✅ Deleted successfully"); },
+        onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["clients"] }); toast.success("✅ Deleted successfully"); },
     });
 
     const resetForm = () => {
@@ -51,17 +49,10 @@ const ClientLedgerPage = () => {
         setEditing(null);
     };
 
-    const openModal = (type: "PAYMENT" | "ADVANCE", p?: any) => {
+    const openModal = (type: "PAYMENT" | "ADVANCE", clientId?: string) => {
         setFormType(type);
-        if (p) {
-            setEditing(p);
-            setForm({
-                clientId: p.clientId, orderId: p.orderId || "", amount: String(p.amount),
-                paymentDate: new Date(p.paymentDate).toISOString().split("T")[0], paymentMethod: p.paymentMethod, notes: p.notes || "",
-            });
-        } else {
-            resetForm();
-        }
+        resetForm();
+        if (clientId) setForm(prev => ({ ...prev, clientId }));
         setShowModal(true);
     };
 
@@ -76,58 +67,20 @@ const ClientLedgerPage = () => {
             paymentMethod: form.paymentMethod,
             notes: form.notes || undefined,
         };
-        if (editing) {
-            updateMut.mutate({ id: editing.id, data: { amount: payload.amount, paymentDate: payload.paymentDate, paymentMethod: payload.paymentMethod, notes: payload.notes } });
-        } else {
-            createMut.mutate(payload);
-        }
+        createMut.mutate(payload);
     };
 
-    const downloadInvoice = (payment: any) => {
-        const order = payment.order;
-        const isAdvance = payment.type === 'ADVANCE';
-        const lines = [
-            "═══════════════════════════════════",
-            "          RD INTERLOCK",
-            `         ${isAdvance ? 'ADVANCE RECEIPT' : 'PAYMENT INVOICE'}`,
-            "═══════════════════════════════════",
-            "",
-            `Client: ${payment.client?.name}`,
-            `Date: ${new Date(payment.paymentDate).toLocaleDateString()}`,
-            `Payment Method: ${payment.paymentMethod}`,
-            "",
-            "───────────────────────────────────",
-            !isAdvance && order ? `Order: ${order.brickType?.size || "N/A"} × ${order.quantity || 0} pcs` : (isAdvance ? "Advance Payment" : "General Payment"),
-            !isAdvance && order ? `Order Total: ₹${order.totalAmount?.toLocaleString()}` : "",
-            `Amount Paid: ₹${payment.amount.toLocaleString()}`,
-            payment.notes ? `Notes: ${payment.notes}` : "",
-            "",
-            "═══════════════════════════════════",
-            "        Thank you for your",
-            "           business!",
-            "═══════════════════════════════════",
-        ].filter(Boolean).join("\n");
-
-        const blob = new Blob([lines], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `receipt_${payment.client?.name}_${new Date(payment.paymentDate).toISOString().split("T")[0]}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
-        toast.success("📄 Document downloaded");
-    };
-
-    const filteredPayments = useMemo(() => {
-        let result = payments;
-        if (typeFilter === "PAYMENT") result = result.filter((p: any) => p.type === "PAYMENT");
-        if (typeFilter === "ADVANCE") result = result.filter((p: any) => p.type === "ADVANCE");
+    const filteredClients = useMemo(() => {
+        let result = clients;
+        if (filterType === "PAYMENT") result = result.filter((c: any) => c.totalPaid > 0);
+        if (filterType === "ADVANCE") result = result.filter((c: any) => (c.advanceBalance || 0) > 0);
+        if (filterType === "PENDING") result = result.filter((c: any) => (c.pendingAmount || 0) > 0);
         return result;
-    }, [payments, typeFilter]);
+    }, [clients, filterType]);
 
     // Summaries
-    const totalReceived = payments.filter((p: any) => p.type === "PAYMENT" && p.paymentMethod !== "ADVANCE_APPLIED").reduce((s: number, p: any) => s + p.amount, 0);
-    const totalAdvance = payments.filter((p: any) => p.type === "ADVANCE").reduce((s: number, p: any) => s + p.amount, 0);
+    const totalReceived = clients.reduce((s: number, c: any) => s + (c.totalPaid || 0), 0);
+    const totalAdvance = clients.reduce((s: number, c: any) => s + (c.advanceBalance || 0), 0);
 
     return (
         <MobileFormLayout title="Client Ledger" subtitle="Payment & Advance tracking">
@@ -142,8 +95,8 @@ const ClientLedgerPage = () => {
                     <p className="text-base sm:text-lg font-bold text-blue-700">₹{totalAdvance.toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-center">
-                    <p className="text-[10px] sm:text-xs text-purple-600 font-medium">Transactions</p>
-                    <p className="text-base sm:text-lg font-bold text-purple-700">{payments.length}</p>
+                    <p className="text-[10px] sm:text-xs text-purple-600 font-medium">Clients</p>
+                    <p className="text-base sm:text-lg font-bold text-purple-700">{clients.length}</p>
                 </div>
             </div>
 
@@ -156,54 +109,68 @@ const ClientLedgerPage = () => {
                 </button>
             </div>
 
-            {/* Filter */}
+            {/* Search & Filter */}
             <div className="flex gap-2 mb-4">
-                <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="flex-1 h-10 px-3 bg-card border border-border rounded-xl text-sm">
-                    <option value="">All Clients</option>
-                    {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="flex-1 h-10 px-3 bg-card border border-border rounded-xl text-sm">
-                    <option value="ALL">All Transactions</option>
-                    <option value="PAYMENT">Payments</option>
-                    <option value="ADVANCE">Advances</option>
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search name or location..."
+                        className="w-full h-10 pl-9 pr-3 bg-card border border-border rounded-xl text-sm focus:border-primary focus:outline-none"
+                    />
+                </div>
+                <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-[120px] h-10 px-3 bg-card border border-border rounded-xl text-sm focus:outline-none">
+                    <option value="ALL">All</option>
+                    <option value="PAYMENT">Payment</option>
+                    <option value="ADVANCE">Advance</option>
+                    <option value="PENDING">Pending</option>
                 </select>
             </div>
 
             {isLoading ? (
                 <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary/40" /></div>
-            ) : filteredPayments.length === 0 ? (
-                <p className="text-center text-muted-foreground text-sm py-8">No records found</p>
+            ) : filteredClients.length === 0 ? (
+                <p className="text-center text-muted-foreground text-sm py-8">No clients found</p>
             ) : (
-                <div className="space-y-2">
-                    {filteredPayments.map((p: any) => (
-                        <div key={p.id} className="p-3 bg-card border border-border rounded-xl relative overflow-hidden">
-                            <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <h3 className="text-lg font-bold">₹{p.amount.toLocaleString()}</h3>
-                                        <span className={cn(
-                                            "flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
-                                            p.type === 'ADVANCE' ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-                                        )}>
-                                            <Tag className="w-3 h-3" />
-                                            {p.type === 'ADVANCE' ? 'Advance' : (p.paymentMethod === 'ADVANCE_APPLIED' ? 'Advance Applied' : 'Payment')}
-                                        </span>
-                                    </div>
-                                    <p className="text-sm font-semibold text-foreground">{p.client?.name}</p>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5 flex flex-wrap gap-1">
-                                        <span>{p.paymentMethod}</span> | <span>{new Date(p.paymentDate).toLocaleDateString()}</span>
+                <div className="space-y-3">
+                    {filteredClients.map((c: any) => (
+                        <div key={c.id} className="p-4 bg-card border border-border rounded-2xl shadow-sm hover:border-primary/20 transition-all">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <h3 className="font-bold text-base text-foreground">{c.name}</h3>
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                        <MapPin className="h-3 w-3" /> {c.address || "No Location"}
                                     </p>
-                                    {p.order && <p className="text-[11px] text-muted-foreground mt-0.5">Order: {p.order.brickType?.size}</p>}
-                                    {p.notes && <p className="text-[11px] text-muted-foreground italic mt-0.5 bg-secondary/50 p-1.5 rounded-md">{p.notes}</p>}
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <button onClick={() => downloadInvoice(p)} className="p-2 rounded-lg hover:bg-secondary" title="Download Document">
-                                        <Download className="h-4 w-4 text-blue-500" />
+                                <div className="flex gap-1">
+                                    <button onClick={() => openModal("PAYMENT", c.id)} className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary text-primary" title="Quick Payment">
+                                        <Plus className="h-4 w-4" />
                                     </button>
-                                    {p.paymentMethod !== 'ADVANCE_APPLIED' && (
-                                        <button onClick={() => openModal(p.type, p)} className="p-2 rounded-lg hover:bg-secondary"><Edit2 className="h-4 w-4 text-amber-500" /></button>
-                                    )}
-                                    <button onClick={() => deleteMut.mutate(p.id)} className="p-2 rounded-lg hover:bg-secondary"><Trash2 className="h-4 w-4 text-red-500" /></button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-2 py-2 border-t border-b border-border/50 my-2">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+                                    <div className="flex items-center gap-1.5 py-1 px-2.5 bg-green-50 text-green-700 rounded-lg font-semibold">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                        Payment: ₹{c.totalPaid?.toLocaleString() || 0}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 py-1 px-2.5 bg-blue-50 text-blue-700 rounded-lg font-semibold">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                                        Advance: ₹{c.advanceBalance?.toLocaleString() || 0}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 py-1 px-2.5 bg-red-50 text-red-700 rounded-lg font-bold">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                                        Pending: ₹{c.pendingAmount?.toLocaleString() || 0}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between items-center mt-2 pt-1 text-[11px] text-muted-foreground">
+                                <div className="flex items-center gap-3">
+                                    <span className="flex items-center gap-1">Mode: <span className="text-foreground font-medium">{c.latestPaymentMethod || 'N/A'}</span></span>
+                                    <span className="flex items-center gap-1">Date: <span className="text-foreground font-medium">{c.latestPaymentDate ? new Date(c.latestPaymentDate).toLocaleDateString() : 'N/A'}</span></span>
                                 </div>
                             </div>
                         </div>
@@ -261,8 +228,8 @@ const ClientLedgerPage = () => {
                         </div>
                         <div className="flex gap-2 mt-5">
                             <button onClick={() => { setShowModal(false); resetForm(); }} className="flex-1 h-11 rounded-xl border border-border text-sm font-medium hover:bg-secondary transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className={cn("flex-1 h-11 rounded-xl text-white text-sm font-semibold transition-colors disabled:opacity-50", formType === 'ADVANCE' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-primary hover:bg-primary/90')}>
-                                {(createMut.isPending || updateMut.isPending) ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : editing ? "Update" : "Save"}
+                            <button onClick={handleSubmit} disabled={createMut.isPending} className={cn("flex-1 h-11 rounded-xl text-white text-sm font-semibold transition-colors disabled:opacity-50", formType === 'ADVANCE' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-primary hover:bg-primary/90')}>
+                                {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Save"}
                             </button>
                         </div>
                     </div>

@@ -119,7 +119,13 @@ export class DispatchService {
     if (customerId) where.customerId = customerId;
     if (brickTypeId) where.brickTypeId = brickTypeId;
     if (paymentStatus) where.paymentStatus = paymentStatus;
-    if (status) where.status = status;
+    if (status) {
+      if (status.includes(',')) {
+        where.status = { in: status.split(',').map((s: string) => s.trim()) };
+      } else {
+        where.status = status;
+      }
+    }
 
     const dispatches = await prisma.dispatch.findMany({
       where,

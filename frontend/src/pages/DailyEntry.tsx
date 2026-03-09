@@ -76,11 +76,6 @@ const DailyEntry = () => {
     },
   });
 
-  const { data: recentExpenses = [], isLoading: isExpensesLoading } = useQuery({
-    queryKey: ['expenses-recent', format(expenseDate, 'yyyy-MM-dd')],
-    queryFn: () => expensesApi.getAll({ startDate: format(expenseDate, 'yyyy-MM-dd'), endDate: format(expenseDate, 'yyyy-MM-dd') }),
-  });
-
   const createExpenseMutation = useMutation({
     mutationFn: expensesApi.create,
     onSuccess: () => {
@@ -147,6 +142,8 @@ const DailyEntry = () => {
       return;
     }
 
+    const availableQty = calcAvailable();
+
     const payload = {
       date: format(entryDate, 'yyyy-MM-dd'),
       machineId,
@@ -159,7 +156,7 @@ const DailyEntry = () => {
         .filter(w => w !== "")
         .map((workerId, index) => ({
           workerId,
-          quantity: Math.floor(totalQty / workers.filter(w => w !== "").length),
+          quantity: Math.floor(availableQty / workers.filter(w => w !== "").length),
         })),
     };
 
@@ -189,7 +186,7 @@ const DailyEntry = () => {
     });
   };
 
-  const totalToday = todayProductions.reduce((sum, p) => sum + p.quantity, 0);
+  const totalToday = todayProductions.reduce((sum, p) => sum + p.availableBricks, 0);
 
   const machineOptions = machines.map(m => ({ label: m.name, value: m.id }));
   const brickTypeOptions = brickTypes.map(bt => ({ label: bt.size, value: bt.id }));
@@ -356,7 +353,7 @@ const DailyEntry = () => {
             todayProductions.map((p, i) => (
               <div key={i} className="flex justify-between items-center py-2.5 border-b border-border/50 last:border-0">
                 <span className="text-sm text-muted-foreground">{p.machine.name} ({p.shift.toLowerCase()})</span>
-                <span className="text-sm font-bold text-foreground">{p.quantity.toLocaleString()} bricks</span>
+                <span className="text-sm font-bold text-foreground">{p.availableBricks.toLocaleString()} bricks</span>
               </div>
             ))
           ) : (
@@ -370,31 +367,6 @@ const DailyEntry = () => {
       </EntryCard>
 
 
-      {/* Recent Expenses List */}
-      <EntryCard title="📊 Recent Expenses">
-        <div className="space-y-3">
-          {isExpensesLoading ? (
-            <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading expenses...
-            </div>
-          ) : recentExpenses.length > 0 ? (
-            recentExpenses.map((e, i) => (
-              <div key={i} className="flex items-center gap-3 p-3.5 bg-secondary/30 rounded-xl">
-                <div className="h-10 w-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
-                  <Receipt className="h-5 w-5 text-accent" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-foreground truncate">{e.notes || e.category}</p>
-                  <p className="text-xs text-muted-foreground">{e.category} • Today</p>
-                </div>
-                <span className="text-sm font-bold text-foreground">₹{e.amount.toLocaleString()}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center italic">No expenses for this date</p>
-          )}
-        </div>
-      </EntryCard>
     </MobileFormLayout >
   );
 };

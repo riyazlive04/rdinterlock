@@ -14,6 +14,7 @@ export class ClientsService {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
                 { phone: { contains: search, mode: 'insensitive' } },
+                { address: { contains: search, mode: 'insensitive' } },
             ];
         }
         const clients = await prisma.customer.findMany({
@@ -22,7 +23,7 @@ export class ClientsService {
             include: {
                 _count: { select: { orders: true, payments: true } },
                 orders: { select: { totalAmount: true } },
-                payments: { select: { type: true, amount: true, paymentMethod: true } }
+                payments: { select: { type: true, amount: true, paymentMethod: true, paymentDate: true } }
             },
         });
 
@@ -33,8 +34,14 @@ export class ClientsService {
             const advanceUsed = client.payments.filter((p: any) => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((sum: number, p: any) => sum + p.amount, 0);
             const totalPaid = client.payments.filter((p: any) => p.type === 'PAYMENT').reduce((sum: number, p: any) => sum + p.amount, 0);
 
-            const pendingAmount = totalOrderAmount - totalPaid;
             const advanceBalance = totalAdvance - advanceUsed;
+            const pendingAmount = totalOrderAmount - (totalPaid + advanceBalance);
+
+            // Latest Activity
+            const sortedPayments = [...client.payments].sort((a: any, b: any) =>
+                new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+            );
+            const latestPayment = sortedPayments[0] || null;
 
             const { orders, payments, ...clientData } = client;
 
@@ -45,7 +52,9 @@ export class ClientsService {
                 advanceUsed,
                 totalPaid,
                 pendingAmount,
-                advanceBalance
+                advanceBalance,
+                latestPaymentDate: latestPayment?.paymentDate || null,
+                latestPaymentMethod: latestPayment?.paymentMethod || 'N/A'
             };
         });
     }
@@ -437,14 +446,29 @@ export class ClientsService {
 
     async getUpcomingDispatches() {
         const now = new Date();
-        const threeDaysLater = new Date(now.getTime() + 3 * 86400000);
-        return prisma.dispatchSchedule.findMany({
+        now.setHours(0, 0, 0, 0); // Start of today
+
+        const threeDaysLater = new Date(now);
+        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+        threeDaysLater.setHours(23, 59, 59, 999); // End of 3rd day
+
+        return prisma.clientOrder.findMany({
             where: {
-                dispatchDate: { lte: threeDaysLater },
-                status: { notIn: ['DISPATCHED', 'COMPLETED', 'Completed'] },
+                expectedDispatchDate: {
+                    gte: now,
+                    lte: threeDaysLater,
+                },
+                status: {
+                    notIn: ['COMPLETED', 'DISPATCHED']
+                }
             },
-            include: { client: true, brickType: true, driver: true, order: true },
-            orderBy: { dispatchDate: 'asc' },
+            include: {
+                client: true,
+                brickType: true,
+            },
+            orderBy: {
+                expectedDispatchDate: 'asc',
+            },
         });
     }
 
@@ -457,16 +481,16 @@ export class ClientsService {
             orderBy: { orderDate: 'desc' },
         });
 
-        const totalOrderAmount = orders.reduce((s, o) => s + o.totalAmount, 0);
-        const totalPaid = orders.reduce((s, o) => s + o.payments.reduce((ps, p) => ps + p.amount, 0), 0);
-        const pendingAmount = totalOrderAmount - totalPaid;
+        const totalOrderAmount = orders.reduce((s: number, o: any) => s + o.totalAmount, 0);
+        const totalPaid = orders.reduce((s: number, o: any) => s + o.payments.reduce((ps: number, p: any) => ps + p.amount, 0), 0);
 
         const allPayments = await prisma.clientPayment.findMany({
             where: { clientId }
         });
-        const totalAdvance = allPayments.filter(p => p.type === 'ADVANCE').reduce((s, p) => s + p.amount, 0);
-        const advanceUsed = allPayments.filter(p => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((s, p) => s + p.amount, 0);
+        const totalAdvance = allPayments.filter((p: any) => p.type === 'ADVANCE').reduce((s: number, p: any) => s + p.amount, 0);
+        const advanceUsed = allPayments.filter((p: any) => p.type === 'PAYMENT' && p.paymentMethod === 'ADVANCE_APPLIED').reduce((s: number, p: any) => s + p.amount, 0);
         const advanceBalance = totalAdvance - advanceUsed;
+        const pendingAmount = totalOrderAmount - (totalPaid + advanceBalance);
 
         return { orders, totalOrderAmount, totalPaid, pendingAmount, totalAdvance, advanceUsed, advanceBalance };
     }

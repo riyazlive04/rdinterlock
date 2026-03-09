@@ -58,7 +58,7 @@ const CashBookPage = () => {
     "Factory Materials": ["Material", "Bearings", "PLC Elements", "Mould (Die)", "Bolts", "Welding", "Lathe"],
     "Factory Utilities": ["E.B (Electricity Bill)", "Gas", "WiFi", "Rent"],
     "Operations & Maintenance": ["Oil", "Gloves", "Fuel"],
-    "Staff & Workers": ["Worker Advance", "Worker Wages", "Staff Salary"],
+    "Staff & Workers": ["Worker Advance", "Staff Advance", "Worker Wages", "Staff Salary"],
     "Office / Misc": ["Food", "Rice", "Tea", "Video Editing", "S.V Expense", "Other Expense"]
   };
   const allCategoriesOut = Object.values(groupedCategoriesOut).flat();
@@ -127,7 +127,7 @@ const CashBookPage = () => {
     };
 
     if (category === "Client Payment") payload.customerId = linkedId;
-    if (["Worker Advance", "Worker Wages", "Staff Salary"].includes(category)) payload.workerId = linkedId;
+    if (["Worker Advance", "Staff Advance", "Worker Wages", "Staff Salary"].includes(category)) payload.workerId = linkedId;
     if (type === "OUT") payload.isRecordOnly = !deductFromBalance;
 
     createEntryMutation.mutate(payload);
@@ -397,7 +397,7 @@ const CashBookPage = () => {
             </FormField>
           )}
 
-          {category === "Staff Salary" && (
+          {category === "Staff Advance" || category === "Staff Salary" ? (
             <FormField label="Select Staff Member" required>
               <select
                 value={linkedId}
@@ -410,7 +410,7 @@ const CashBookPage = () => {
                 ))}
               </select>
             </FormField>
-          )}
+          ) : null}
 
           <FormField label="Amount (₹)" required>
             <BigNumberInput value={amount} onChange={setAmount} />
