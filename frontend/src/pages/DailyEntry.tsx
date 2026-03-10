@@ -5,7 +5,7 @@ import { ActionButton } from "@/components/ActionButton";
 import { DatePickerField } from "@/components/DatePickerField";
 import { PillSelector } from "@/components/PillSelector";
 import { toast } from "sonner";
-import { Save, Plus, X, Fuel, UtensilsCrossed, PackageOpen, MoreHorizontal, Eye, Loader2, Receipt, Check } from "lucide-react";
+import { Save, Plus, X, Fuel, UtensilsCrossed, PackageOpen, MoreHorizontal, Loader2, Receipt, Check } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { settingsApi } from "@/api/settings.api";
 import { workersApi } from "@/api/workers.api";
@@ -340,9 +340,6 @@ const DailyEntry = () => {
             />
           </div>
 
-          <button className="w-full text-sm text-primary font-medium flex items-center justify-center gap-1.5 py-2 hover:bg-primary/5 rounded-xl transition-colors">
-            <Eye className="h-4 w-4" /> View / Edit Entries
-          </button>
         </div>
       </EntryCard>
 

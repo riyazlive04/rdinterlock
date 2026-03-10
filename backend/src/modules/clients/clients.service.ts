@@ -64,7 +64,7 @@ export class ClientsService {
             where: { id },
             include: {
                 orders: {
-                    include: { brickType: true, payments: true },
+                    include: { brickType: true, payments: true, driver: true },
                     orderBy: { orderDate: 'desc' },
                 },
                 payments: { orderBy: { paymentDate: 'desc' } },
@@ -101,8 +101,23 @@ export class ClientsService {
     async deleteClient(id: string) {
         const client = await prisma.customer.findUnique({ where: { id } });
         if (!client) throw new AppError('Client not found', 404);
-        await prisma.customer.update({ where: { id }, data: { isActive: false } });
-        return { message: 'Client deactivated' };
+
+        await prisma.$transaction([
+            // Delete related cash entries first
+            prisma.cashEntry.deleteMany({ where: { customerId: id } }),
+            // Delete related dispatches
+            prisma.dispatch.deleteMany({ where: { customerId: id } }),
+            // Delete related schedules
+            prisma.dispatchSchedule.deleteMany({ where: { clientId: id } }),
+            // Delete related payments
+            prisma.clientPayment.deleteMany({ where: { clientId: id } }),
+            // Delete related orders
+            prisma.clientOrder.deleteMany({ where: { clientId: id } }),
+            // Finally delete the client
+            prisma.customer.delete({ where: { id } }),
+        ]);
+
+        return { message: 'Client and all related data deleted permanently' };
     }
 
     // ═══════════════════════ ORDERS ═══════════════════════
@@ -120,8 +135,9 @@ export class ClientsService {
                 expectedDispatchDate: data.expectedDispatchDate ? new Date(data.expectedDispatchDate) : null,
                 status: data.status || 'PENDING',
                 notes: data.notes,
+                driverId: data.driverId || null,
             },
-            include: { client: true, brickType: true },
+            include: { client: true, brickType: true, driver: true },
         });
     }
 
@@ -132,7 +148,7 @@ export class ClientsService {
 
         return prisma.clientOrder.findMany({
             where,
-            include: { client: true, brickType: true, payments: true },
+            include: { client: true, brickType: true, payments: true, driver: true },
             orderBy: { orderDate: 'desc' },
         });
     }
@@ -150,7 +166,7 @@ export class ClientsService {
     async getOrderById(id: string) {
         const order = await prisma.clientOrder.findUnique({
             where: { id },
-            include: { client: true, brickType: true, payments: true },
+            include: { client: true, brickType: true, payments: true, driver: true },
         });
         if (!order) throw new AppError('Order not found', 404);
         return order;
@@ -170,7 +186,7 @@ export class ClientsService {
         return prisma.clientOrder.update({
             where: { id },
             data: updateData,
-            include: { client: true, brickType: true },
+            include: { client: true, brickType: true, driver: true },
         });
     }
 

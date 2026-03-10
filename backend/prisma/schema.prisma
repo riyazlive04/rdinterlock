@@ -71,6 +71,7 @@ model Worker {
   advances           WorkerAdvance[]
   cashEntries        CashEntry[]
   dispatches         Dispatch[]          @relation("DriverDispatches")
+  clientOrders       ClientOrder[]       @relation("OrderDriver")
 
   @@map("workers")
 }
@@ -139,6 +140,8 @@ model ClientOrder {
   updatedAt            DateTime        @updatedAt
   brickType            BrickType       @relation("OrderBrickType", fields: [brickTypeId], references: [id])
   client               Customer        @relation(fields: [clientId], references: [id])
+  driverId             String?
+  driver               Worker?         @relation("OrderDriver", fields: [driverId], references: [id])
   payments             ClientPayment[]
   dispatches         Dispatch[]
   dispatchSchedules  DispatchSchedule[]

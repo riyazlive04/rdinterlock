@@ -27,6 +27,7 @@ export const createOrderSchema = z.object({
     expectedDispatchDate: z.string().optional(),
     status: z.string().optional(),
     notes: z.string().optional(),
+    driverId: z.string().uuid().optional().nullable(),
 });
 
 export const updateOrderSchema = z.object({
@@ -39,6 +40,7 @@ export const updateOrderSchema = z.object({
     expectedDispatchDate: z.string().optional(),
     status: z.string().optional(),
     notes: z.string().optional(),
+    driverId: z.string().uuid().optional().nullable(),
 });
 
 // --- Client Payments ---

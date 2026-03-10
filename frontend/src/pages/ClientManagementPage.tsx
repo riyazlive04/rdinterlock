@@ -9,6 +9,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { clientsApi } from "@/api/clients.api";
 import { settingsApi } from "@/api/settings.api";
+import { workersApi } from "@/api/workers.api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,17 @@ const emptyOrderForm = (clientId = "") => ({
     expectedDispatchDate: "",
     status: "PENDING",
     notes: "",
+    driverId: "",
+});
+
+const emptyScheduleForm = (clientId = "") => ({
+    clientId,
+    brickTypeId: "",
+    quantity: "",
+    dispatchDate: new Date().toISOString().split("T")[0],
+    driverId: "",
+    location: "",
+    status: "SCHEDULED",
 });
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -55,6 +67,15 @@ const ClientManagementPage = () => {
     const [orderForm, setOrderForm] = useState(emptyOrderForm());
     const [autoCalc, setAutoCalc] = useState(true);
 
+    // ── Schedule Dispatch modal ──
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [editingSchedule, setEditingSchedule] = useState<any>(null);
+    const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm());
+
+    // ── Delete Confirmation modal ──
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [clientToDelete, setClientToDelete] = useState<any>(null);
+
     // ─── Queries ───────────────────────────────────────────────────────────────
 
     const { data: clients = [], isLoading: isLoadingClients } = useQuery({
@@ -67,12 +88,29 @@ const ClientManagementPage = () => {
         queryFn: () => clientsApi.getAllOrders({}),
     });
 
+    const { data: allSchedules = [], isLoading: isLoadingSchedules } = useQuery({
+        queryKey: ["client-schedules-all"],
+        queryFn: () => clientsApi.getAllSchedules({}),
+    });
+
     const { data: brickTypes = [] } = useQuery({
         queryKey: ["brick-types"],
         queryFn: () => settingsApi.getBrickTypes(),
     });
 
-    const isLoading = isLoadingClients || isLoadingOrders;
+    const { data: drivers = [] } = useQuery({
+        queryKey: ["drivers"],
+        queryFn: () => workersApi.getAll(true), // fetching all active employees to act as drivers
+    });
+
+    const eligibleDrivers = useMemo(() => {
+        return (drivers as any[]).filter((d: any) => {
+            const r = d.role?.toLowerCase().trim() || '';
+            return r === 'driver' || r === 'drivers' || r.includes('driver');
+        });
+    }, [drivers]);
+
+    const isLoading = isLoadingClients || isLoadingOrders || isLoadingSchedules;
 
     // ─── Group orders by client ────────────────────────────────────────────────
     const ordersByClient = useMemo(() => {
@@ -83,6 +121,19 @@ const ClientManagementPage = () => {
         });
         return map;
     }, [allOrders]);
+
+    const schedulesByClient = useMemo(() => {
+        const map: Record<string, any[]> = {};
+        (allSchedules as any[]).forEach((s: any) => {
+            if (!map[s.clientId]) map[s.clientId] = [];
+            map[s.clientId].push(s);
+        });
+        // Sort dispatch schedules by dispatch date descending
+        Object.keys(map).forEach(clientId => {
+           map[clientId].sort((a,b) => new Date(b.dispatchDate).getTime() - new Date(a.dispatchDate).getTime());
+        });
+        return map;
+    }, [allSchedules]);
 
     // ─── Client Mutations ──────────────────────────────────────────────────────
 
@@ -113,8 +164,14 @@ const ClientManagementPage = () => {
         mutationFn: (id: string) => clientsApi.delete(id),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["clients"] });
-            toast.success("✅ Client removed");
+            queryClient.invalidateQueries({ queryKey: ["client-schedules-all"] });
+            queryClient.invalidateQueries({ queryKey: ["dispatches-completed"] });
+            queryClient.invalidateQueries({ queryKey: ["client-orders-all"] });
+            setShowDeleteModal(false);
+            setClientToDelete(null);
+            toast.success("✅ Client and all data deleted permanently");
         },
+        onError: (e: any) => toast.error("❌ Deletion failed", { description: e.message }),
     });
 
     // ─── Order Mutations ───────────────────────────────────────────────────────
@@ -124,12 +181,9 @@ const ClientManagementPage = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["client-orders-all"] });
             queryClient.invalidateQueries({ queryKey: ["clients"] });
-            setShowOrderModal(false);
-            setEditingOrder(null);
-            setOrderForm(emptyOrderForm());
-            toast.success("✅ Order created");
+            // Don't close modal here if we are chaining another request, do it in the submit handler
         },
-        onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
+        onError: (e: any) => toast.error("❌ Failed to create order", { description: e.message }),
     });
 
     const updateOrderMut = useMutation({
@@ -137,12 +191,8 @@ const ClientManagementPage = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["client-orders-all"] });
             queryClient.invalidateQueries({ queryKey: ["clients"] });
-            setShowOrderModal(false);
-            setEditingOrder(null);
-            setOrderForm(emptyOrderForm());
-            toast.success("✅ Order updated");
         },
-        onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
+        onError: (e: any) => toast.error("❌ Failed to update order", { description: e.message }),
     });
 
     const deleteOrderMut = useMutation({
@@ -152,6 +202,37 @@ const ClientManagementPage = () => {
             queryClient.invalidateQueries({ queryKey: ["clients"] });
             toast.success("✅ Order deleted");
         },
+    });
+
+    // ─── Schedule Mutations ────────────────────────────────────────────────────
+
+    const createScheduleMut = useMutation({
+        mutationFn: (data: any) => clientsApi.createSchedule(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["client-schedules-all"] });
+            queryClient.invalidateQueries({ queryKey: ["dispatch-schedules"] });
+            setShowScheduleModal(false);
+            setEditingSchedule(null);
+            setScheduleForm(emptyScheduleForm());
+            toast.success("✅ Dispatch scheduled");
+        },
+        onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
+    });
+
+    const updateScheduleMut = useMutation({
+        mutationFn: ({ id, data }: any) => clientsApi.updateSchedule(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["client-schedules-all"] });
+            queryClient.invalidateQueries({ queryKey: ["dispatches-completed"] });
+            // In case it was completed and moved to final dispatch, we need to refresh orders and clients
+            queryClient.invalidateQueries({ queryKey: ["client-orders-all"] });
+            queryClient.invalidateQueries({ queryKey: ["clients"] });
+            setShowScheduleModal(false);
+            setEditingSchedule(null);
+            setScheduleForm(emptyScheduleForm());
+            toast.success("✅ Dispatch updated");
+        },
+        onError: (e: any) => toast.error("❌ Failed", { description: e.message }),
     });
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -206,6 +287,7 @@ const ClientManagementPage = () => {
             expectedDispatchDate: o.expectedDispatchDate ? new Date(o.expectedDispatchDate).toISOString().split("T")[0] : "",
             status: o.status,
             notes: o.notes || "",
+            driverId: o.driverId || "", 
         });
         setAutoCalc(false);
         setShowOrderModal(true);
@@ -221,10 +303,15 @@ const ClientManagementPage = () => {
         setOrderForm(updated);
     };
 
-    const handleOrderSubmit = () => {
+    const handleOrderSubmit = async () => {
+        if (!orderForm.brickTypeId) return toast.error("Please select a Brick Type");
+        if (!orderForm.quantity) return toast.error("Quantity is required");
+        if (!orderForm.totalAmount) return toast.error("Estimated Amount is required");
+        
         if (!orderForm.clientId || !orderForm.brickTypeId || !orderForm.quantity || !orderForm.totalAmount) {
             return toast.error("Fill all required fields");
         }
+        
         const payload = {
             clientId: orderForm.clientId,
             brickTypeId: orderForm.brickTypeId,
@@ -235,9 +322,75 @@ const ClientManagementPage = () => {
             expectedDispatchDate: orderForm.expectedDispatchDate || undefined,
             status: orderForm.status,
             notes: orderForm.notes || undefined,
+            driverId: orderForm.driverId || null,
         };
-        if (editingOrder) updateOrderMut.mutate({ id: editingOrder.id, data: payload });
-        else createOrderMut.mutate(payload);
+
+        try {
+            if (editingOrder) {
+                await updateOrderMut.mutateAsync({ id: editingOrder.id, data: payload });
+                toast.success("✅ Order updated");
+            } else {
+                const newOrder = await createOrderMut.mutateAsync(payload);
+                toast.success("✅ Order created");
+                
+                // If a driver was selected during creation, auto-generate the dispatch schedule wrapper
+                if (orderForm.driverId) {
+                    await createScheduleMut.mutateAsync({
+                        clientId: orderForm.clientId,
+                        brickTypeId: orderForm.brickTypeId,
+                        quantity: parseInt(orderForm.quantity),
+                        dispatchDate: orderForm.expectedDispatchDate || orderForm.orderDate,
+                        driverId: orderForm.driverId,
+                        status: orderForm.status === "READY" || orderForm.status === "DISPATCHED" ? orderForm.status : "SCHEDULED",
+                        orderId: newOrder.id,
+                    });
+                }
+            }
+        } catch (e: any) {
+            return; // Error handled by mutation onError
+        }
+
+        setShowOrderModal(false);
+        setEditingOrder(null);
+        setOrderForm(emptyOrderForm());
+    };
+
+    const openAddSchedule = (clientId: string) => {
+        setEditingSchedule(null);
+        setScheduleForm(emptyScheduleForm(clientId));
+        setShowScheduleModal(true);
+        setExpandedIds(prev => new Set(prev).add(clientId));
+    };
+
+    const openEditSchedule = (s: any) => {
+        setEditingSchedule(s);
+        setScheduleForm({
+            clientId: s.clientId,
+            brickTypeId: s.brickTypeId,
+            quantity: String(s.quantity),
+            dispatchDate: new Date(s.dispatchDate).toISOString().split("T")[0],
+            driverId: s.driverId || "",
+            location: s.location || "",
+            status: s.status || "SCHEDULED",
+        });
+        setShowScheduleModal(true);
+    };
+
+    const handleScheduleSubmit = () => {
+        if (!scheduleForm.clientId || !scheduleForm.brickTypeId || !scheduleForm.quantity || !scheduleForm.dispatchDate) {
+            return toast.error("Fill all required fields");
+        }
+        const payload = {
+            clientId: scheduleForm.clientId,
+            brickTypeId: scheduleForm.brickTypeId,
+            quantity: parseInt(scheduleForm.quantity),
+            dispatchDate: scheduleForm.dispatchDate,
+            driverId: scheduleForm.driverId || undefined,
+            location: scheduleForm.location || undefined,
+            status: scheduleForm.status,
+        };
+        if (editingSchedule) updateScheduleMut.mutate({ id: editingSchedule.id, data: payload });
+        else createScheduleMut.mutate(payload);
     };
 
     // ─── Render ────────────────────────────────────────────────────────────────
@@ -288,6 +441,7 @@ const ClientManagementPage = () => {
                 <div className="space-y-3">
                     {(clients as any[]).map((client: any) => {
                         const clientOrders: any[] = ordersByClient[client.id] || [];
+                        const clientSchedules: any[] = schedulesByClient[client.id] || [];
                         const isExpanded = expandedIds.has(client.id);
 
                         const totalBricks = clientOrders.reduce((s, o) => s + (o.quantity || 0), 0);
@@ -342,7 +496,8 @@ const ClientManagementPage = () => {
                                             </button>
                                             <button
                                                 onClick={() => {
-                                                    if (confirm(`Delete ${client.name}?`)) deleteClientMut.mutate(client.id);
+                                                    setClientToDelete(client);
+                                                    setShowDeleteModal(true);
                                                 }}
                                                 className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
                                                 title="Delete Client"
@@ -435,6 +590,71 @@ const ClientManagementPage = () => {
                                             >
                                                 <Plus className="h-3.5 w-3.5" /> Add Order
                                             </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ── Dispatch Records Table ── */}
+                                {isExpanded && (
+                                    <div className="border-t border-border bg-secondary/10 px-4 pb-4 pt-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h4 className="text-sm font-bold text-foreground">Dispatch Records</h4>
+                                            <button
+                                                onClick={() => openAddSchedule(client.id)}
+                                                className="px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors flex items-center gap-1"
+                                            >
+                                                <Plus className="h-3 w-3" /> Schedule Dispatch
+                                            </button>
+                                        </div>
+                                        {clientSchedules.length === 0 ? (
+                                            <div className="text-center py-4 bg-card rounded-xl border border-border">
+                                                <p className="text-xs text-muted-foreground">No dispatch expected</p>
+                                            </div>
+                                        ) : (
+                                            <div className="overflow-x-auto select-text">
+                                                <table className="w-full text-xs text-left min-w-[500px]">
+                                                    <thead className="bg-secondary/40 text-[10px] text-muted-foreground uppercase border-b border-border">
+                                                        <tr>
+                                                            <th className="py-2 px-2 font-semibold">Brick Type</th>
+                                                            <th className="py-2 px-2 font-semibold">Qty</th>
+                                                            <th className="py-2 px-2 font-semibold">Location</th>
+                                                            <th className="py-2 px-2 font-semibold">Date</th>
+                                                            <th className="py-2 px-2 font-semibold">Driver</th>
+                                                            <th className="py-2 px-2 font-semibold">Status</th>
+                                                            <th className="py-2 px-2 font-semibold text-center">Action</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-border/50">
+                                                        {clientSchedules.map((s: any) => (
+                                                            <tr key={s.id} className="hover:bg-secondary/30 transition-colors bg-card">
+                                                                <td className="py-2 px-2 font-medium">{s.brickType?.size || '—'}</td>
+                                                                <td className="py-2 px-2">{(s.quantity || 0).toLocaleString()}</td>
+                                                                <td className="py-2 px-2 text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[100px]" title={s.location}>{s.location || '—'}</td>
+                                                                <td className="py-2 px-2 whitespace-nowrap">{format(new Date(s.dispatchDate), 'dd MMM yyyy')}</td>
+                                                                <td className="py-2 px-2 text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[80px]" title={s.driver?.name}>{s.driver?.name || '—'}</td>
+                                                                <td className="py-2 px-2">
+                                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-sm font-medium whitespace-nowrap ${s.status === 'SCHEDULED' ? 'bg-yellow-100 text-yellow-700' :
+                                                                        s.status === 'READY' ? 'bg-purple-100 text-purple-700' :
+                                                                            s.status === 'DISPATCHED' ? 'bg-orange-100 text-orange-700' :
+                                                                                'bg-gray-100 text-gray-700'
+                                                                        }`}>
+                                                                        {s.status}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-2 px-2 text-center">
+                                                                    <button
+                                                                        onClick={() => openEditSchedule(s)}
+                                                                        className="p-1 rounded-md text-primary hover:bg-primary/10 transition-colors"
+                                                                        title="Edit Status"
+                                                                    >
+                                                                        <Edit2 className="h-3.5 w-3.5" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         )}
                                     </div>
                                 )}
@@ -588,18 +808,33 @@ const ClientManagementPage = () => {
                                 </div>
                             </div>
 
-                            {/* Status */}
-                            <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Status</p>
-                                <select
-                                    value={orderForm.status}
-                                    onChange={(e) => setOrderForm({ ...orderForm, status: e.target.value })}
-                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
-                                >
-                                    {STATUS_OPTIONS.map((s) => (
-                                        <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-                                    ))}
-                                </select>
+                            {/* Status and Driver Dropdown */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Status</p>
+                                    <select
+                                        value={orderForm.status}
+                                        onChange={(e) => setOrderForm({ ...orderForm, status: e.target.value })}
+                                        className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                    >
+                                        {STATUS_OPTIONS.map((s) => (
+                                            <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Assign Driver (Optional)</p>
+                                    <select
+                                        value={orderForm.driverId}
+                                        onChange={(e) => setOrderForm({ ...orderForm, driverId: e.target.value })}
+                                        className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                    >
+                                        <option value="">No driver assigned</option>
+                                        {eligibleDrivers.map((d: any) => (
+                                            <option key={d.id} value={d.id}>{d.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             {/* Notes */}
@@ -628,6 +863,164 @@ const ClientManagementPage = () => {
                                     ? <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                                     : editingOrder ? "Update" : "Create"
                                 }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Schedule Dispatch Modal ────────────────────────────────────── */}
+            {showScheduleModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-card rounded-2xl p-6 w-full max-w-md border border-border shadow-2xl overflow-y-auto max-h-[92vh]">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-bold">{editingSchedule ? "Edit Dispatch" : "Schedule Dispatch"}</h2>
+                            <button onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); setScheduleForm(emptyScheduleForm()); }}>
+                                <X className="h-5 w-5 text-muted-foreground" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <h3 className="text-xs font-semibold text-foreground/70 pb-2 mb-2 border-b border-border">
+                                {editingSchedule ? "Update the status or edit details" : "Schedule a new dispatch for this client"}
+                            </h3>
+
+                            {/* Brick Type */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Brick Type *</p>
+                                <select
+                                    value={scheduleForm.brickTypeId}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, brickTypeId: e.target.value })}
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                >
+                                    <option value="">Select Brick Type</option>
+                                    {(brickTypes as any[]).map((b: any) => (
+                                        <option key={b.id} value={b.id}>{b.size}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Quantity */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Quantity *</p>
+                                <input
+                                    value={scheduleForm.quantity}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, quantity: e.target.value })}
+                                    type="number"
+                                    placeholder="pcs"
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                />
+                            </div>
+
+                            {/* Dates */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Dispatch Date *</p>
+                                <input
+                                    value={scheduleForm.dispatchDate}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, dispatchDate: e.target.value })}
+                                    type="date"
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                />
+                            </div>
+
+                            {/* Driver */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Driver</p>
+                                <select
+                                    value={scheduleForm.driverId}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, driverId: e.target.value })}
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                >
+                                    <option value="">Select Driver (Optional)</option>
+                                    {eligibleDrivers.map((d: any) => (
+                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Location */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Location</p>
+                                <input
+                                    value={scheduleForm.location}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, location: e.target.value })}
+                                    placeholder="Delivery location"
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm"
+                                />
+                            </div>
+
+                            {/* Status */}
+                            <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1 px-1">Status</p>
+                                <select
+                                    value={scheduleForm.status}
+                                    onChange={(e) => setScheduleForm({ ...scheduleForm, status: e.target.value })}
+                                    className="w-full h-10 px-3 bg-secondary/50 border border-border rounded-xl text-sm font-medium"
+                                >
+                                    <option value="SCHEDULED">Scheduled</option>
+                                    <option value="READY">Ready</option>
+                                    <option value="DISPATCHED">Dispatched</option>
+                                    <option value="COMPLETED">Completed</option>
+                                </select>
+                                {scheduleForm.status === "COMPLETED" && (
+                                    <p className="text-[10px] text-green-600 font-semibold mt-1 px-1">
+                                        Marking as Completed will move this to final dispatch history.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-5">
+                            <button
+                                onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); setScheduleForm(emptyScheduleForm()); }}
+                                className="flex-1 h-10 rounded-xl border border-border text-sm font-medium hover:bg-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleScheduleSubmit}
+                                disabled={createScheduleMut.isPending || updateScheduleMut.isPending}
+                                className={`flex-1 h-10 rounded-xl text-white text-sm font-semibold disabled:opacity-50 transition-colors ${
+                                    scheduleForm.status === 'COMPLETED' ? 'bg-green-600 hover:bg-green-700' : 'bg-primary hover:bg-primary/90'
+                                }`}
+                            >
+                                {(createScheduleMut.isPending || updateScheduleMut.isPending)
+                                    ? <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                                    : editingSchedule ? "Save Changes" : "Schedule"
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-card w-full max-w-[400px] rounded-3xl p-6 shadow-2xl border border-border animate-in fade-in zoom-in duration-200">
+                        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mb-4 text-red-600">
+                            <Trash2 className="h-6 w-6" />
+                        </div>
+                        
+                        <h2 className="text-xl font-bold text-foreground mb-2">Delete Client Permanently</h2>
+                        <p className="text-sm text-muted-foreground leading-relaxed mb-6">
+                            This will permanently remove <span className="font-semibold text-foreground">{clientToDelete?.name}</span> and all related orders, dispatch records, ledger entries, and history. 
+                            <span className="block mt-2 font-medium text-red-600">This action cannot be undone.</span>
+                        </p>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => { setShowDeleteModal(false); setClientToDelete(null); }}
+                                className="flex-1 h-11 rounded-xl border border-border text-sm font-medium hover:bg-secondary transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => deleteClientMut.mutate(clientToDelete.id)}
+                                disabled={deleteClientMut.isPending}
+                                className="flex-1 h-11 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+                            >
+                                {deleteClientMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete Permanently"}
                             </button>
                         </div>
                     </div>

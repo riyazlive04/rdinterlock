@@ -15,7 +15,6 @@ import {
   CalendarCheck,
   UserCircle,
   ShoppingCart,
-  CalendarClock,
   CreditCard,
   ChevronDown,
   ChevronRight,
@@ -42,7 +41,6 @@ const navItems = [
 
 const clientLoungeItems = [
   { title: "Client Management", url: "/client-management", icon: UserCircle },
-  { title: "Dispatch Schedule", url: "/dispatch-scheduling", icon: CalendarClock },
   { title: "Client Ledger", url: "/client-ledger", icon: CreditCard },
   { title: "Client History", url: "/client-history", icon: Truck },
 ];
