@@ -54,7 +54,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@rdinterlock.com"
+                placeholder="adminrd@interlock.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -89,7 +89,7 @@ export default function LoginPage() {
 
           <div className="text-center text-xs text-muted-foreground">
             <p>Default credentials:</p>
-            <p className="font-mono">admin@rdinterlock.com / admin123</p>
+            <p className="font-mono">adminrd@interlock.com / rdadmin</p>
           </div>
         </div>
       </div>
