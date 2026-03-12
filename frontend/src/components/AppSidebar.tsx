@@ -97,7 +97,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="p-4 border-b border-sidebar-border/50">
         <div className="flex items-center gap-3">
-          <img src="/favicon.ico" alt="RD Interlock" className="h-10 w-10 shrink-0" />
+          <img src="/logo.png" alt="RD Interlock" className="h-10 w-10 shrink-0 object-contain" />
           {!collapsed && (
             <div>
               <p className="font-bold text-sidebar-foreground text-sm leading-tight">RD Interlock</p>
