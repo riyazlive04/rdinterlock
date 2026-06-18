@@ -19,6 +19,7 @@ export type ReportFilter = {
   categoryId?: string;
   vendorId?: string;
   tipperId?: string;
+  personId?: string;
 };
 
 export type LedgerCol = {
@@ -501,23 +502,27 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
 
       type Entry = {
         id: string;
+        pid: string | null;
         date: Date;
         person: string;
         role: string;
         kind: string;
+        status: string;
         notes: string;
         earned: number | null;
         advance: number | null;
         paid: number | null;
       };
 
-      const entries: Entry[] = [
+      let entries: Entry[] = [
         ...shares.map((s) => ({
           id: `ps-${s.id}`,
+          pid: s.operatorId,
           date: s.productionEntry.date,
           person: s.operator.name,
           role: "operator",
           kind: "Production",
+          status: "Earned",
           notes: `${s.brickCount.toLocaleString("en-IN")} bricks`,
           earned: s.amount,
           advance: null,
@@ -525,10 +530,12 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
         })),
         ...loadingWorks.map((w) => ({
           id: `lw-${w.id}`,
+          pid: w.loaderId ?? w.operatorId ?? w.employeeId,
           date: w.date,
           person: w.loader?.name ?? w.operator?.name ?? w.employee?.name ?? "-",
           role: w.workerType,
           kind: w.phase === "unloading" ? "Unloading" : "Loading",
+          status: "Earned",
           notes: "",
           earned: w.totalAmount,
           advance: null,
@@ -536,10 +543,12 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
         })),
         ...masonWorks.map((w) => ({
           id: `mw-${w.id}`,
+          pid: w.masonId,
           date: w.date,
           person: w.mason.name,
           role: "mason",
           kind: "Mason",
+          status: "Earned",
           notes: w.siteName,
           earned: w.totalAmount,
           advance: null,
@@ -547,10 +556,12 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
         })),
         ...advances.map((a) => ({
           id: `ad-${a.id}`,
+          pid: a.operatorId ?? a.masonId ?? a.loaderId ?? a.employeeId,
           date: a.date,
           person: a.operator?.name ?? a.mason?.name ?? a.loader?.name ?? a.employee?.name ?? "-",
           role: a.personType,
-          kind: a.settled ? "Advance (settled)" : "Advance",
+          kind: "Advance",
+          status: a.settled ? "Settled" : "Pending",
           notes: a.notes ?? "",
           earned: null,
           advance: a.amount,
@@ -558,10 +569,12 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
         })),
         ...employeePayouts.map((p) => ({
           id: `ep-${p.id}`,
+          pid: p.employeeId,
           date: p.date,
           person: p.employee.name,
           role: "employee",
           kind: "Salary paid",
+          status: "Paid",
           notes: p.notes ?? "",
           earned: null,
           advance: null,
@@ -569,16 +582,20 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
         })),
         ...workerPayouts.map((p) => ({
           id: `wp-${p.id}`,
+          pid: p.operatorId ?? p.masonId ?? p.loaderId ?? p.employeeId,
           date: p.date,
           person: p.operator?.name ?? p.mason?.name ?? p.loader?.name ?? p.employee?.name ?? "-",
           role: p.personType,
           kind: "Salary paid",
+          status: "Paid",
           notes: p.notes ?? "",
           earned: null,
           advance: null,
           paid: p.netPaid,
         })),
       ];
+
+      if (filter.personId) entries = entries.filter((e) => e.pid === filter.personId);
 
       const moneyKeys = ["earned", "advance", "paid"];
       const { sections, totals } = groupByDate(
@@ -589,6 +606,7 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
             person: e.person,
             role: e.role,
             kind: e.kind,
+            status: e.status,
             notes: e.notes,
             earned: e.earned,
             advance: e.advance,
@@ -605,6 +623,7 @@ export async function getReportData(filter: ReportFilter): Promise<LedgerData> {
           { key: "person", header: "Person", format: "text" },
           { key: "role", header: "Role", format: "muted" },
           { key: "kind", header: "Kind" },
+          { key: "status", header: "Status", format: "muted" },
           { key: "notes", header: "Notes", format: "muted" },
           { key: "earned", header: "Earned", format: "money", align: "right" },
           { key: "advance", header: "Advance", format: "money", align: "right" },
